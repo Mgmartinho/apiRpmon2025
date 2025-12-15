@@ -2,7 +2,11 @@ import mongoose from "mongoose";
 
 export const autorSchema = new mongoose.Schema(
   {
-    nome: { type: String, required: true },
+    id: { type: String },
+    nome: {
+       type: String, required: [true, 'O nome do autor é obrigatório.' ] 
+      
+      },
     nacionalidade: { type: String }
   },
   { versionKey: false }
