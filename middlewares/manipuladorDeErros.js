@@ -16,3 +16,5 @@ function manipuladorDeErros(erro, req, res, next) {
 }
 
 export default manipuladorDeErros;
+
+

@@ -38,22 +38,38 @@ router.post(
    HISTÓRICO DE HORAS
 ====================================================== */
 
-// 🔍 Histórico completo (lupa no front)
-router.get(
-  "/solipedes/historico/:numero",
-  SolipedeController.historicoHoras
-);
-
-// 📊 Histórico mensal (para gráficos)
+// Historico mensal (para gráficos) - DEVE VIR ANTES DA ROTA COM :numero
 router.get(
   "/solipedes/historico/mensal/:numero",
   SolipedeController.historicoMensal
 );
 
-// ✏️ Atualizar lançamento específico
+// Atualizar lançamento específico - DEVE VIR ANTES DO GET :numero GENÉRICO
 router.put(
-  "/historicoHoras/:id",
+  "/solipedes/historico/:id",
   SolipedeController.atualizarHistorico
 );
+
+// Historico completo (lupa no front) - GENÉRICO VIRA POR ÚLTIMO
+router.get(
+  "/solipedes/historico/:numero",
+  SolipedeController.historicoHoras
+);
+
+/* ======================================================
+   PRONTUÁRIO (OBSERVAÇÕES CLÍNICAS)
+====================================================== */
+
+// Salvar observação clínica
+router.post("/prontuario", SolipedeController.salvarProntuario);
+
+// Listar observações de um solípede
+router.get("/prontuario/:numero", SolipedeController.listarProntuario);
+
+// Atualizar observação
+router.put("/prontuario/:id", SolipedeController.atualizarProntuario);
+
+// Deletar observação
+router.delete("/prontuario/:id", SolipedeController.deletarProntuario);
 
 export default router;

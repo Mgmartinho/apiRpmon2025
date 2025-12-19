@@ -1,4 +1,5 @@
 import pool from "../config/mysqlConnect.js";
+import bcrypt from "bcryptjs";
 
 class Solipede {
   /* ======================================================
@@ -90,7 +91,7 @@ class Solipede {
     )}`;
   }
 
-static async adicionarHoras(numero, horas) {
+static async adicionarHoras(numero, horas, usuarioId) {
   // validação defensiva
   if (!numero || !horas) {
     throw new Error("Número e horas são obrigatórios");
@@ -101,12 +102,12 @@ static async adicionarHoras(numero, horas) {
   const anoAtual = hoje.getFullYear();
   const mesReferencia = `${anoAtual}-${String(mesAtual).padStart(2, "0")}`;
 
-  // 1️⃣ inserir no histórico
+  // 1️⃣ inserir no histórico com usuarioId
   await pool.query(
     `INSERT INTO historicoHoras 
-     (solipedeNumero, horas, dataLancamento, mesReferencia, mes, ano)
-     VALUES (?, ?, NOW(), ?, ?, ?)`,
-    [numero, Number(horas), mesReferencia, mesAtual, anoAtual]
+     (solipedeNumero, horas, dataLancamento, mesReferencia, mes, ano, usuarioId)
+     VALUES (?, ?, NOW(), ?, ?, ?, ?)`,
+    [numero, Number(horas), mesReferencia, mesAtual, anoAtual, usuarioId || null]
   );
 
   // 2️⃣ recalcular total
@@ -128,16 +129,46 @@ static async adicionarHoras(numero, horas) {
   return totalHoras;
 }
 
+static async verificarSenhaUsuario(email, senhaFornecida) {
+  const [rows] = await pool.query(
+    "SELECT id, senha FROM usuarios WHERE email = ?",
+    [email]
+  );
+
+  if (!rows.length) {
+    throw new Error("Usuário não encontrado");
+  }
+
+  const usuario = rows[0];
+  const senhaValida = await bcrypt.compare(senhaFornecida, usuario.senha);
+
+  if (!senhaValida) {
+    throw new Error("Senha incorreta");
+  }
+
+  return usuario.id;
+}
+
 
   /* ======================================================
      HISTÓRICO
   ====================================================== */
   static async buscarHistorico(numero) {
     const [rows] = await pool.query(
-      `SELECT id, horas, dataLancamento, mesReferencia, mes, ano
-       FROM historicoHoras
-       WHERE solipedeNumero = ?
-       ORDER BY dataLancamento DESC`,
+      `SELECT 
+        h.id, 
+        h.horas, 
+        h.dataLancamento, 
+        h.mesReferencia, 
+        h.mes, 
+        h.ano,
+        h.usuarioId,
+        u.nome as usuarioNome,
+        u.email as usuarioEmail
+       FROM historicoHoras h
+       LEFT JOIN usuarios u ON h.usuarioId = u.id
+       WHERE h.solipedeNumero = ?
+       ORDER BY h.dataLancamento DESC`,
       [numero]
     );
 
@@ -146,10 +177,17 @@ static async adicionarHoras(numero, horas) {
 
   static async buscarHistoricoPorMes(numero, mesReferencia) {
     const [rows] = await pool.query(
-      `SELECT id, horas, dataLancamento
-       FROM historicoHoras
-       WHERE solipedeNumero = ? AND mesReferencia = ?
-       ORDER BY dataLancamento DESC`,
+      `SELECT 
+        h.id, 
+        h.horas, 
+        h.dataLancamento,
+        h.usuarioId,
+        u.nome as usuarioNome,
+        u.email as usuarioEmail
+       FROM historicoHoras h
+       LEFT JOIN usuarios u ON h.usuarioId = u.id
+       WHERE h.solipedeNumero = ? AND h.mesReferencia = ?
+       ORDER BY h.dataLancamento DESC`,
       [numero, mesReferencia]
     );
 
@@ -189,6 +227,65 @@ static async adicionarHoras(numero, horas) {
 
   return totalHoras;
 }
+
+  /* ======================================================
+     PRONTUÁRIO
+  ====================================================== */
+  static async salvarProntuario(dados) {
+    const sql = `
+      INSERT INTO prontuario (numero_solipede, tipo, observacao, recomendacoes, data_criacao)
+      VALUES (?, ?, ?, ?, NOW())
+    `;
+
+    const [resultado] = await pool.query(sql, [
+      dados.numero_solipede,
+      dados.tipo,
+      dados.observacao,
+      dados.recomendacoes
+    ]);
+
+    return resultado.insertId;
+  }
+
+  static async listarProntuario(numero) {
+    const sql = `
+      SELECT id, numero_solipede, tipo, observacao, recomendacoes, data_criacao
+      FROM prontuario
+      WHERE numero_solipede = ?
+      ORDER BY data_criacao DESC
+    `;
+
+    const [rows] = await pool.query(sql, [numero]);
+    return rows;
+  }
+
+  static async atualizarProntuario(id, dados) {
+    const sql = `
+      UPDATE prontuario
+      SET tipo = ?, observacao = ?, recomendacoes = ?
+      WHERE id = ?
+    `;
+
+    await pool.query(sql, [dados.tipo, dados.observacao, dados.recomendacoes, id]);
+  }
+
+  static async deletarProntuario(id) {
+    const sql = `DELETE FROM prontuario WHERE id = ?`;
+    await pool.query(sql, [id]);
+  }
+
+static async buscarHistoricoComUsuario(numero) {
+  const sql = `
+    SELECT h.*, u.nome AS usuarioNome
+    FROM historicohoras h
+    LEFT JOIN usuarios u ON h.usuarioId = u.id
+    WHERE h.solipedeNumero = ?
+    ORDER BY h.dataLancamento ASC
+  `;
+  const [rows] = await pool.query(sql, [numero]);
+  return rows;
+}
+
 
 }
 
