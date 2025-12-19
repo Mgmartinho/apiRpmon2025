@@ -40,13 +40,13 @@ router.post(
 
 // 🔍 Histórico completo (lupa no front)
 router.get(
-  "/solipedes/:numero/historico",
+  "/solipedes/historico/:numero",
   SolipedeController.historicoHoras
 );
 
 // 📊 Histórico mensal (para gráficos)
 router.get(
-  "/solipedes/:numero/historico/mensal",
+  "/solipedes/historico/mensal/:numero",
   SolipedeController.historicoMensal
 );
 

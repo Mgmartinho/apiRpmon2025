@@ -53,20 +53,30 @@ class SolipedeController {
   }
 
   // ===== Carga Horária =====
-  static async adicionarHoras(req, res) {
-    try {
-      const { numero, horas } = req.body;
-      if (!numero || horas === undefined) {
-        return res.status(400).json({ error: "Número e horas são obrigatórios" });
-      }
+static async adicionarHoras(req, res) {
+  try {
+    const { numero, horas } = req.body;
 
-      const novaCarga = await Solipede.adicionarHoras(numero, Number(horas));
-      res.status(200).json({ success: true, totalHoras: novaCarga });
-    } catch (err) {
-      console.error("Erro adicionarHoras:", err);
-      res.status(500).json({ error: err.message });
+    if (!numero || horas === undefined) {
+      return res
+        .status(400)
+        .json({ error: "Número e horas são obrigatórios" });
     }
+
+    const totalHoras = await Solipede.adicionarHoras(
+      numero,
+      Number(horas)
+    );
+
+    res.status(200).json({
+      success: true,
+      totalHoras,
+    });
+  } catch (err) {
+    console.error("Erro adicionarHoras:", err);
+    res.status(500).json({ error: err.message });
   }
+}
 
   // ===== Histórico =====
   static async historicoHoras(req, res) {

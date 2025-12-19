@@ -90,48 +90,43 @@ class Solipede {
     )}`;
   }
 
-static adicionarHoras = async (req, res) => {
-  try {
-    const { numero, horas } = req.body;
-    if (!numero || !horas) 
-      return res.status(400).json({ error: "Número e horas são obrigatórios" });
-
-    const hoje = new Date();
-    const mesAtual = hoje.getMonth() + 1;
-    const anoAtual = hoje.getFullYear();
-    const mesReferencia = `${anoAtual}-${String(mesAtual).padStart(2,"0")}`;
-
-    // 1️⃣ Inserir no histórico
-    await pool.query(
-      `INSERT INTO historicoHoras 
-       (solipedeNumero, horas, dataLancamento, mesReferencia, mes, ano)
-       VALUES (?, ?, NOW(), ?, ?, ?)`,
-      [numero, Number(horas), mesReferencia, mesAtual, anoAtual]
-    );
-
-    // 2️⃣ Recalcular carga horária total
-    const [soma] = await pool.query(
-      `SELECT SUM(horas) AS totalHoras 
-       FROM historicoHoras 
-       WHERE solipedeNumero = ?`,
-      [numero]
-    );
-
-    const totalHoras = soma[0].totalHoras || 0;
-
-    // 3️⃣ Atualizar cargaHoraria no solípede
-    await pool.query(
-      `UPDATE solipede SET cargaHoraria = ? WHERE numero = ?`,
-      [totalHoras, numero]
-    );
-
-    res.status(200).json({ success: true, totalHoras });
-
-  } catch (err) {
-    console.error("ERRO adicionarHoras:", err);
-    res.status(500).json({ error: err.message });
+static async adicionarHoras(numero, horas) {
+  // validação defensiva
+  if (!numero || !horas) {
+    throw new Error("Número e horas são obrigatórios");
   }
-};
+
+  const hoje = new Date();
+  const mesAtual = hoje.getMonth() + 1;
+  const anoAtual = hoje.getFullYear();
+  const mesReferencia = `${anoAtual}-${String(mesAtual).padStart(2, "0")}`;
+
+  // 1️⃣ inserir no histórico
+  await pool.query(
+    `INSERT INTO historicoHoras 
+     (solipedeNumero, horas, dataLancamento, mesReferencia, mes, ano)
+     VALUES (?, ?, NOW(), ?, ?, ?)`,
+    [numero, Number(horas), mesReferencia, mesAtual, anoAtual]
+  );
+
+  // 2️⃣ recalcular total
+  const [rows] = await pool.query(
+    `SELECT SUM(horas) AS totalHoras
+     FROM historicoHoras
+     WHERE solipedeNumero = ?`,
+    [numero]
+  );
+
+  const totalHoras = rows[0].totalHoras || 0;
+
+  // 3️⃣ atualizar solípede
+  await pool.query(
+    `UPDATE solipede SET cargaHoraria = ? WHERE numero = ?`,
+    [totalHoras, numero]
+  );
+
+  return totalHoras;
+}
 
 
   /* ======================================================
@@ -160,6 +155,41 @@ static adicionarHoras = async (req, res) => {
 
     return rows;
   }
+
+  static async atualizarHistorico(id, horas) {
+  // 1️⃣ Atualiza o lançamento
+  await pool.query(
+    "UPDATE historicoHoras SET horas = ? WHERE id = ?",
+    [Number(horas), id]
+  );
+
+  // 2️⃣ Descobre qual solípede foi alterado
+  const [[registro]] = await pool.query(
+    "SELECT solipedeNumero FROM historicoHoras WHERE id = ?",
+    [id]
+  );
+
+  if (!registro) return 0;
+
+  const numero = registro.solipedeNumero;
+
+  // 3️⃣ Recalcula o total
+  const [[soma]] = await pool.query(
+    "SELECT SUM(horas) AS totalHoras FROM historicoHoras WHERE solipedeNumero = ?",
+    [numero]
+  );
+
+  const totalHoras = soma.totalHoras || 0;
+
+  // 4️⃣ Atualiza tabela solipede
+  await pool.query(
+    "UPDATE solipede SET cargaHoraria = ? WHERE numero = ?",
+    [totalHoras, numero]
+  );
+
+  return totalHoras;
+}
+
 }
 
 export default Solipede;
