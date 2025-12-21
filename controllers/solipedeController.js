@@ -3,14 +3,19 @@ import Solipede from "../models/Solipedes.js";
 class SolipedeController {
 
   // ===== CRUD =====
-  static async listar(req, res, next) {
-    try {
-      const dados = await Solipede.listar();
-      res.status(200).json(dados);
-    } catch (err) {
-      next(err);
-    }
+static async listar(req, res, next) {
+  try {
+    const { alocacao } = req.query;
+
+    const dados = await Solipede.listar({
+      alocacao
+    });
+
+    res.status(200).json(dados);
+  } catch (err) {
+    next(err);
   }
+}
 
   static async obterPorNumero(req, res, next) {
     try {
@@ -51,53 +56,78 @@ class SolipedeController {
       next(err);
     }
   }
-
-  // ===== Carga Horária =====
 static async adicionarHoras(req, res) {
   try {
-    const { numero, horas, senha, usuarioEmail } = req.body;
+    const { numero, horas, senha, usuarioId } = req.body;
 
-    if (!numero || horas === undefined) {
-      return res
-        .status(400)
-        .json({ error: "Número e horas são obrigatórios" });
+    console.log("🔥 RECEBIDO adicionarHoras:", { numero, horas, senha, usuarioId });
+    console.log("Tipo usuarioId:", typeof usuarioId, "Valor:", usuarioId);
+    console.log("Usuario do token:", req.usuario);
+
+    if (!numero || horas === undefined || !senha || !usuarioId) {
+      console.log("❌ Validação falhou:", { numero: !!numero, horas: horas !== undefined, senha: !!senha, usuarioId: !!usuarioId });
+      return res.status(400).json({
+        error: "Número, horas, senha e usuarioId são obrigatórios",
+      });
     }
 
-    let usuarioId = null;
+    // 🔐 usuário vindo DO TOKEN
+    const usuario = req.usuario;
 
-    // Verificar senha e obter userId
-    if (senha && usuarioEmail) {
-      try {
-        usuarioId = await Solipede.verificarSenhaUsuario(usuarioEmail, senha);
-      } catch (err) {
-        return res.status(401).json({ error: "Senha incorreta! Lançamento não realizado." });
-      }
+    if (!usuario || !usuario.email || !usuario.id) {
+      console.log("Usuario inválido:", usuario);
+      return res.status(401).json({ error: "Usuário não autenticado" });
     }
 
+    // Verificar se o usuarioId do body é o mesmo do token
+    console.log("Comparando usuario.id:", usuario.id, "tipo:", typeof usuario.id, "com usuarioId:", usuarioId, "tipo:", typeof usuarioId);
+    if (usuario.id !== usuarioId) {
+      console.log("❌ usuario.id !== usuarioId");
+      return res.status(403).json({ error: "ID do usuário não corresponde" });
+    }
+    console.log("✅ usuario.id === usuarioId");
+
+    // 1️⃣ validar senha do usuário LOGADO
+    console.log("Validando senha para email:", usuario.email);
+    await Solipede.verificarSenhaUsuario(
+      usuario.email,
+      senha
+    );
+    console.log("Senha validada com sucesso");
+
+    // 2️⃣ lançar horas COM ID DO BODY
+    console.log("Lançando horas com usuarioId:", usuarioId);
     const totalHoras = await Solipede.adicionarHoras(
       numero,
       Number(horas),
       usuarioId
     );
 
-    res.status(200).json({
+    console.log("Horas lançadas, total:", totalHoras);
+
+    return res.status(200).json({
       success: true,
       totalHoras,
-      message: "Lançamento realizado com sucesso"
+      message: "Lançamento realizado com sucesso",
     });
   } catch (err) {
-    console.error("Erro adicionarHoras:", err);
-    res.status(500).json({ error: err.message });
+    console.error("Erro ao adicionar horas:", err);
+
+    if (err.message === "Senha incorreta") {
+      return res.status(401).json({ error: "Senha incorreta" });
+    }
+
+    return res.status(500).json({ error: err.message });
   }
 }
 
   // ===== Histórico =====
-static async historicoHoras(req, res) {
+  static async historicoHoras(req, res) {
   try {
     const { numero } = req.params;
 
     // Buscar histórico com nome do usuário
-    const historico = await Solipede.buscarHistoricoComUsuario(numero);
+    const historico = await Solipede.buscarHistorico(numero);
 
     res.status(200).json(historico);
   } catch (err) {

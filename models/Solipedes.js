@@ -5,8 +5,19 @@ class Solipede {
   /* ======================================================
      LISTAGEM
   ====================================================== */
-  static async listar() {
-    const [rows] = await pool.query("SELECT * FROM solipede");
+  /* ======================================================
+    LISTAGEM COM FILTRO OPCIONAL
+ ====================================================== */
+  static async listar(filtros = {}) {
+    let sql = "SELECT * FROM solipede";
+    const params = [];
+
+    if (filtros.alocacao) {
+      sql += " WHERE alocacao = ?";
+      params.push(filtros.alocacao);
+    }
+
+    const [rows] = await pool.query(sql, params);
 
     return rows.map((s) => ({
       ...s,
@@ -15,6 +26,7 @@ class Solipede {
         : null,
     }));
   }
+
 
   static async buscarPorNumero(numero) {
     const [rows] = await pool.query(
@@ -91,63 +103,79 @@ class Solipede {
     )}`;
   }
 
-static async adicionarHoras(numero, horas, usuarioId) {
-  // validação defensiva
-  if (!numero || !horas) {
-    throw new Error("Número e horas são obrigatórios");
-  }
+  static async adicionarHoras(numero, horas, usuarioId) {
+    // validação defensiva
+    if (!numero || !horas) {
+      throw new Error("Número e horas são obrigatórios");
+    }
 
-  const hoje = new Date();
-  const mesAtual = hoje.getMonth() + 1;
-  const anoAtual = hoje.getFullYear();
-  const mesReferencia = `${anoAtual}-${String(mesAtual).padStart(2, "0")}`;
+    if (!usuarioId) {
+      console.warn("⚠️ Lançamento sem usuário identificado");
+    }
 
-  // 1️⃣ inserir no histórico com usuarioId
-  await pool.query(
-    `INSERT INTO historicoHoras 
-     (solipedeNumero, horas, dataLancamento, mesReferencia, mes, ano, usuarioId)
-     VALUES (?, ?, NOW(), ?, ?, ?, ?)`,
-    [numero, Number(horas), mesReferencia, mesAtual, anoAtual, usuarioId || null]
-  );
+    const hoje = new Date();
+    const mesAtual = hoje.getMonth() + 1;
+    const anoAtual = hoje.getFullYear();
+    const mesReferencia = `${anoAtual}-${String(mesAtual).padStart(2, "0")}`;
 
-  // 2️⃣ recalcular total
-  const [rows] = await pool.query(
-    `SELECT SUM(horas) AS totalHoras
+    // 1️⃣ inserir no histórico com usuarioId
+    console.log("Inserindo histórico:", { numero, horas, usuarioId, tipo: typeof usuarioId });
+    const usuarioIdNumerico = Number(usuarioId) || null;
+    console.log("usuarioIdNumerico:", usuarioIdNumerico, "tipo:", typeof usuarioIdNumerico);
+    const params = [numero, Number(horas), mesReferencia, mesAtual, anoAtual, usuarioIdNumerico];
+    console.log("Parametros do insert:", params);
+    try {
+      const result = await pool.query(
+        `INSERT INTO historicoHoras 
+   (solipedeNumero, horas, dataLancamento, mesReferencia, mes, ano, usuarioId)
+   VALUES (?, ?, NOW(), ?, ?, ?, ?)`,
+        params
+      );
+      console.log("Insert result:", result);
+    } catch (insertError) {
+      console.error("Erro no insert:", insertError);
+      throw insertError;
+    }
+
+
+    // 2️⃣ recalcular total
+    const [rows] = await pool.query(
+      `SELECT SUM(horas) AS totalHoras
      FROM historicoHoras
      WHERE solipedeNumero = ?`,
-    [numero]
-  );
+      [numero]
+    );
 
-  const totalHoras = rows[0].totalHoras || 0;
+    const totalHoras = rows[0].totalHoras || 0;
 
-  // 3️⃣ atualizar solípede
-  await pool.query(
-    `UPDATE solipede SET cargaHoraria = ? WHERE numero = ?`,
-    [totalHoras, numero]
-  );
+    // 3️⃣ atualizar solípede
+    await pool.query(
+      `UPDATE solipede SET cargaHoraria = ? WHERE numero = ?`,
+      [totalHoras, numero]
+    );
 
-  return totalHoras;
-}
-
-static async verificarSenhaUsuario(email, senhaFornecida) {
-  const [rows] = await pool.query(
-    "SELECT id, senha FROM usuarios WHERE email = ?",
-    [email]
-  );
-
-  if (!rows.length) {
-    throw new Error("Usuário não encontrado");
+    return totalHoras;
   }
 
-  const usuario = rows[0];
-  const senhaValida = await bcrypt.compare(senhaFornecida, usuario.senha);
+  static async verificarSenhaUsuario(email, senhaFornecida) {
+    const [rows] = await pool.query(
+      "SELECT id, senha FROM usuarios WHERE email = ?",
+      [email]
+    );
 
-  if (!senhaValida) {
-    throw new Error("Senha incorreta");
+    if (!rows.length) {
+      throw new Error("Usuário não encontrado");
+    }
+
+    const usuario = rows[0];
+    const senhaValida = await bcrypt.compare(senhaFornecida, usuario.senha);
+
+    if (!senhaValida) {
+      throw new Error("Senha incorreta");
+    }
+
+    return usuario.id;
   }
-
-  return usuario.id;
-}
 
 
   /* ======================================================
@@ -156,24 +184,27 @@ static async verificarSenhaUsuario(email, senhaFornecida) {
   static async buscarHistorico(numero) {
     const [rows] = await pool.query(
       `SELECT 
-        h.id, 
-        h.horas, 
-        h.dataLancamento, 
-        h.mesReferencia, 
-        h.mes, 
-        h.ano,
-        h.usuarioId,
-        u.nome as usuarioNome,
-        u.email as usuarioEmail
-       FROM historicoHoras h
-       LEFT JOIN usuarios u ON h.usuarioId = u.id
-       WHERE h.solipedeNumero = ?
-       ORDER BY h.dataLancamento DESC`,
+      h.id, 
+      h.horas, 
+      h.dataLancamento, 
+      h.mesReferencia, 
+      h.mes, 
+      h.ano,
+      h.usuarioId,
+      u.nome as usuarioNome,
+      u.email as usuarioEmail
+     FROM historicoHoras h
+     LEFT JOIN usuarios u ON h.usuarioId = u.id
+     WHERE h.solipedeNumero = ?
+     ORDER BY h.dataLancamento DESC`,
       [numero]
     );
 
+    console.log("Historico rows:", rows);
+
     return rows;
   }
+
 
   static async buscarHistoricoPorMes(numero, mesReferencia) {
     const [rows] = await pool.query(
@@ -195,38 +226,38 @@ static async verificarSenhaUsuario(email, senhaFornecida) {
   }
 
   static async atualizarHistorico(id, horas) {
-  // 1️⃣ Atualiza o lançamento
-  await pool.query(
-    "UPDATE historicoHoras SET horas = ? WHERE id = ?",
-    [Number(horas), id]
-  );
+    // 1️⃣ Atualiza o lançamento
+    await pool.query(
+      "UPDATE historicoHoras SET horas = ? WHERE id = ?",
+      [Number(horas), id]
+    );
 
-  // 2️⃣ Descobre qual solípede foi alterado
-  const [[registro]] = await pool.query(
-    "SELECT solipedeNumero FROM historicoHoras WHERE id = ?",
-    [id]
-  );
+    // 2️⃣ Descobre qual solípede foi alterado
+    const [[registro]] = await pool.query(
+      "SELECT solipedeNumero FROM historicoHoras WHERE id = ?",
+      [id]
+    );
 
-  if (!registro) return 0;
+    if (!registro) return 0;
 
-  const numero = registro.solipedeNumero;
+    const numero = registro.solipedeNumero;
 
-  // 3️⃣ Recalcula o total
-  const [[soma]] = await pool.query(
-    "SELECT SUM(horas) AS totalHoras FROM historicoHoras WHERE solipedeNumero = ?",
-    [numero]
-  );
+    // 3️⃣ Recalcula o total
+    const [[soma]] = await pool.query(
+      "SELECT SUM(horas) AS totalHoras FROM historicoHoras WHERE solipedeNumero = ?",
+      [numero]
+    );
 
-  const totalHoras = soma.totalHoras || 0;
+    const totalHoras = soma.totalHoras || 0;
 
-  // 4️⃣ Atualiza tabela solipede
-  await pool.query(
-    "UPDATE solipede SET cargaHoraria = ? WHERE numero = ?",
-    [totalHoras, numero]
-  );
+    // 4️⃣ Atualiza tabela solipede
+    await pool.query(
+      "UPDATE solipede SET cargaHoraria = ? WHERE numero = ?",
+      [totalHoras, numero]
+    );
 
-  return totalHoras;
-}
+    return totalHoras;
+  }
 
   /* ======================================================
      PRONTUÁRIO
@@ -274,18 +305,35 @@ static async verificarSenhaUsuario(email, senhaFornecida) {
     await pool.query(sql, [id]);
   }
 
-static async buscarHistoricoComUsuario(numero) {
-  const sql = `
-    SELECT h.*, u.nome AS usuarioNome
-    FROM historicohoras h
+  static async buscarHistoricoComUsuario(numero) {
+    const sql = `
+    SELECT 
+      h.id,
+      h.horas,
+      h.dataLancamento,
+      h.mesReferencia,
+      h.mes,
+      h.ano,
+      h.usuarioId,
+      u.nome AS usuarioNome,
+      u.email AS usuarioEmail
+    FROM historicoHoras h
     LEFT JOIN usuarios u ON h.usuarioId = u.id
     WHERE h.solipedeNumero = ?
-    ORDER BY h.dataLancamento ASC
+    ORDER BY h.dataLancamento DESC
   `;
-  const [rows] = await pool.query(sql, [numero]);
-  return rows;
-}
 
+    const [rows] = await pool.query(sql, [numero]);
+    return rows;
+  }
+
+  static async buscarUsuarioPorId(id) {
+    const [[row]] = await pool.query(
+      "SELECT id, email FROM usuarios WHERE id = ?",
+      [id]
+    );
+    return row;
+  }
 
 }
 

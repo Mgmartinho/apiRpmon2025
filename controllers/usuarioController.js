@@ -22,6 +22,7 @@ class UsuarioController {
         {
           id: usuario.id,
           nome: usuario.nome,
+          email: usuario.email,
           perfil: usuario.perfil,
         },
         process.env.JWT_SECRET,
@@ -33,6 +34,7 @@ class UsuarioController {
         usuario: {
           id: usuario.id,
           nome: usuario.nome,
+          email: usuario.email,
           perfil: usuario.perfil,
         },
       });

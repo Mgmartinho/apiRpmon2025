@@ -11,6 +11,9 @@ const routes = (app) => {
   // ROTA PÚBLICA - Listar solípedes
   app.get("/solipedes/publico", SolipedeController.listar);
 
+  // ROTA PÚBLICA - Histórico de horas
+  app.get("/solipedes/historico/:numero", SolipedeController.historicoHoras);
+
   // routes/index.js
   app.use("/auth", usuarioRoutes);
   app.use("/gestaoFVR", authMiddleware, solipedesRoutes);

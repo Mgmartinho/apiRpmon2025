@@ -15,6 +15,8 @@ export default function authMiddleware(req, res, next) {
     // 🔥 usuário disponível em toda a requisição
     req.usuario = decoded;
 
+    console.log("Decoded token:", decoded); // DEBUG
+
     next();
   } catch (error) {
     return res.status(401).json({ error: "Token inválido ou expirado" });

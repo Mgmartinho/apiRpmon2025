@@ -5,18 +5,38 @@ async function runMigration() {
     console.log('🔄 Iniciando migração...');
 
     try {
-      // 1. Adicionar coluna usuario_id se não existir
+      // 1. Adicionar coluna usuarioId se não existir
       await pool.query(`
         ALTER TABLE historicoHoras 
-        ADD COLUMN usuario_id INT NULL
+        ADD COLUMN usuarioId INT NULL
       `);
-      console.log('✅ Coluna usuario_id adicionada');
+      console.log('✅ Coluna usuarioId adicionada');
     } catch (err) {
       if (err.code === 'ER_DUP_FIELDNAME') {
-        console.log('✅ Coluna usuario_id já existe');
+        console.log('✅ Coluna usuarioId já existe');
       } else {
         throw err;
       }
+    }
+
+    try {
+      // Remover foreign key antiga se existir
+      await pool.query(`
+        ALTER TABLE historicoHoras DROP FOREIGN KEY fk_usuario_id
+      `);
+      console.log('✅ Foreign key antiga removida');
+    } catch (err) {
+      console.log('ℹ️ Foreign key antiga não existe ou erro:', err.message);
+    }
+
+    try {
+      // Remover coluna usuario_id se existir
+      await pool.query(`
+        ALTER TABLE historicoHoras DROP COLUMN usuario_id
+      `);
+      console.log('✅ Coluna usuario_id removida');
+    } catch (err) {
+      console.log('ℹ️ Coluna usuario_id não existe ou erro:', err.message);
     }
 
     try {
@@ -24,7 +44,7 @@ async function runMigration() {
       await pool.query(`
         ALTER TABLE historicoHoras 
         ADD CONSTRAINT fk_usuario_id 
-        FOREIGN KEY (usuario_id) REFERENCES usuarios(id) 
+        FOREIGN KEY (usuarioId) REFERENCES usuarios(id) 
         ON DELETE SET NULL
       `);
       console.log('✅ Foreign key adicionada');
@@ -52,6 +72,35 @@ async function runMigration() {
       )
     `);
     console.log('✅ Tabela prontuario criada/verificada');
+
+    // 4. Adicionar índices para performance
+    try {
+      await pool.query(`CREATE INDEX IF NOT EXISTS idx_solipede_alocacao ON solipede(alocacao)`);
+      console.log('✅ Índice alocacao adicionado');
+    } catch (err) {
+      console.log('ℹ️ Índice alocacao já existe ou erro:', err.message);
+    }
+
+    try {
+      await pool.query(`CREATE INDEX IF NOT EXISTS idx_solipede_esquadrao ON solipede(esquadrao)`);
+      console.log('✅ Índice esquadrao adicionado');
+    } catch (err) {
+      console.log('ℹ️ Índice esquadrao já existe ou erro:', err.message);
+    }
+
+    try {
+      await pool.query(`CREATE INDEX IF NOT EXISTS idx_solipede_nome ON solipede(nome)`);
+      console.log('✅ Índice nome adicionado');
+    } catch (err) {
+      console.log('ℹ️ Índice nome já existe ou erro:', err.message);
+    }
+
+    try {
+      await pool.query(`CREATE INDEX IF NOT EXISTS idx_historico_solipede ON historicoHoras(solipedeNumero)`);
+      console.log('✅ Índice historico solipede adicionado');
+    } catch (err) {
+      console.log('ℹ️ Índice historico solipede já existe ou erro:', err.message);
+    }
 
     console.log('✅✅✅ Migração concluída com sucesso!');
     process.exit(0);
