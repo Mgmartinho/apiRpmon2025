@@ -225,6 +225,81 @@ class Solipede {
     return rows;
   }
 
+  /* ======================================================
+     INDICADORES ANUAIS POR ESQUADRÃO
+  ====================================================== */
+  static async indicadoresAnuaisPorEsquadrao(anoAlvo) {
+    const ano = Number(anoAlvo) || new Date().getFullYear();
+
+    // Soma de horas por mês e esquadrão no ano informado
+    const [agregadoHoras] = await pool.query(
+      `SELECT 
+         s.esquadrao AS esquadrao,
+         COALESCE(h.mes, MONTH(h.dataLancamento)) AS mes,
+         COALESCE(h.ano, YEAR(h.dataLancamento)) AS ano,
+         SUM(h.horas) AS totalHoras
+       FROM historicoHoras h
+       INNER JOIN solipede s ON s.numero = h.solipedeNumero
+       WHERE COALESCE(h.ano, YEAR(h.dataLancamento)) = ?
+       GROUP BY s.esquadrao, COALESCE(h.ano, YEAR(h.dataLancamento)), COALESCE(h.mes, MONTH(h.dataLancamento))
+       ORDER BY mes ASC`,
+      [ano]
+    );
+
+    // Carga horária atual por esquadrão (tabela solipede)
+    const [cargaAtualRows] = await pool.query(
+      `SELECT esquadrao, SUM(cargaHoraria) AS cargaAtual
+         FROM solipede
+        GROUP BY esquadrao`
+    );
+
+    // Conjunto base de categorias conhecidas
+    const categoriasBase = [
+      "1 Esquadrao",
+      "2 Esquadrao",
+      "3 Esquadrao",
+      "4 Esquadrao",
+      "Equoterapia",
+      "Representacao",
+    ];
+
+    // Garantir 12 meses com zeros
+    const meses = Array.from({ length: 12 }, (_, idx) => {
+      const mesNumero = idx + 1;
+      const mesStr = `${ano}-${String(mesNumero).padStart(2, "0")}`;
+      const linha = { mes: mesStr };
+      categoriasBase.forEach((cat) => {
+        linha[cat] = 0;
+      });
+      return linha;
+    });
+
+    // Alimentar valores vindos do banco
+    agregadoHoras.forEach((row) => {
+      const mesIdx = (row.mes || 1) - 1;
+      const categoria = row.esquadrao || "Sem Esquadrao";
+
+      // Se surgir categoria nova, adiciona ao dataset
+      if (!categoriasBase.includes(categoria)) {
+        categoriasBase.push(categoria);
+        meses.forEach((linha) => {
+          if (linha[categoria] === undefined) linha[categoria] = 0;
+        });
+      }
+
+      if (meses[mesIdx]) {
+        meses[mesIdx][categoria] = (meses[mesIdx][categoria] || 0) + (row.totalHoras || 0);
+      }
+    });
+
+    return {
+      ano,
+      categorias: categoriasBase,
+      meses,
+      cargaAtualPorEsquadrao: cargaAtualRows,
+    };
+  }
+
   static async atualizarHistorico(id, horas) {
     // 1️⃣ Atualiza o lançamento
     await pool.query(
@@ -260,33 +335,94 @@ class Solipede {
   }
 
   /* ======================================================
+     MOVIMENTAÇÃO EM LOTE (STATUS)
+  ====================================================== */
+  static async atualizarMovimentacaoEmLote(numeros, novoStatus) {
+    if (!Array.isArray(numeros) || numeros.length === 0) {
+      throw new Error("Lista de solípedes vazia");
+    }
+
+    // Buscar status atual
+    const [rows] = await pool.query(
+      `SELECT numero, status FROM solipede WHERE numero IN (${numeros.map(() => '?').join(',')})`,
+      numeros
+    );
+    const anteriores = new Map(rows.map((r) => [r.numero, r.status]));
+
+    // Atualizar status e refletir na coluna movimentacao
+    await pool.query(
+      `UPDATE solipede SET status = ?, movimentacao = ? WHERE numero IN (${numeros.map(() => '?').join(',')})`,
+      [novoStatus, novoStatus, ...numeros]
+    );
+
+    return anteriores; // mapa numero -> statusAnterior
+  }
+
+  static async registrarMovimentacoesProntuario(numeros, mapaMovAnterior, novoStatus, usuarioId) {
+    for (const numero of numeros) {
+      const anterior = mapaMovAnterior.get(numero) || 'Indefinido';
+      const observacao = `Status: ${anterior} → ${novoStatus || 'Indefinido'}`;
+      try {
+        await this.salvarProntuario({
+          numero_solipede: numero,
+          tipo: 'Movimentação de Status',
+          observacao,
+          recomendacoes: null,
+          usuario_id: usuarioId || null,
+        });
+      } catch (e) {
+        console.error(`Erro ao registrar movimentação no prontuário (${numero}):`, e.message);
+      }
+    }
+  }
+
+  /* ======================================================
      PRONTUÁRIO
   ====================================================== */
   static async salvarProntuario(dados) {
     const sql = `
-      INSERT INTO prontuario (numero_solipede, tipo, observacao, recomendacoes, data_criacao)
-      VALUES (?, ?, ?, ?, NOW())
+      INSERT INTO prontuario (numero_solipede, tipo, observacao, recomendacoes, usuarioId, data_criacao)
+      VALUES (?, ?, ?, ?, ?, NOW())
     `;
+
+    console.log("💾 Model salvarProntuario - dados recebidos:", dados);
 
     const [resultado] = await pool.query(sql, [
       dados.numero_solipede,
       dados.tipo,
       dados.observacao,
-      dados.recomendacoes
+      dados.recomendacoes,
+      dados.usuario_id || null
     ]);
 
+    console.log("💾 INSERT executado, insertId:", resultado.insertId);
     return resultado.insertId;
   }
 
   static async listarProntuario(numero) {
     const sql = `
-      SELECT id, numero_solipede, tipo, observacao, recomendacoes, data_criacao
-      FROM prontuario
-      WHERE numero_solipede = ?
-      ORDER BY data_criacao DESC
+      SELECT 
+        p.id, 
+        p.numero_solipede, 
+        p.tipo, 
+        p.observacao, 
+        p.recomendacoes, 
+        p.data_criacao,
+        p.usuarioId,
+        u.id as usuario_id_check,
+        u.nome as usuario_nome,
+        u.re as usuario_registro,
+        u.perfil as usuario_perfil,
+        u.email as usuario_email
+      FROM prontuario p
+      LEFT JOIN usuarios u ON p.usuarioId = u.id
+      WHERE p.numero_solipede = ?
+      ORDER BY p.data_criacao DESC
     `;
 
+    console.log("📖 Query listarProntuario para número:", numero);
     const [rows] = await pool.query(sql, [numero]);
+    console.log("📖 Rows retornadas:", JSON.stringify(rows, null, 2));
     return rows;
   }
 

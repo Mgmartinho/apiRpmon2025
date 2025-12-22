@@ -33,6 +33,12 @@ router.post(
   SolipedeController.adicionarHoras
 );
 
+// Movimentação em lote (alteração de status)
+router.post(
+  "/solipedes/movimentacao/bulk",
+  SolipedeController.movimentacaoEmLote
+);
+
 
 /* ======================================================
    HISTÓRICO DE HORAS

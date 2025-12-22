@@ -64,14 +64,68 @@ async function runMigration() {
         tipo VARCHAR(50) DEFAULT 'Observação Geral',
         observacao LONGTEXT NOT NULL,
         recomendacoes LONGTEXT,
+        usuarioId INT NULL,
         data_criacao TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
         data_atualizacao TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
         FOREIGN KEY (numero_solipede) REFERENCES solipede(numero) ON DELETE CASCADE,
+        FOREIGN KEY (usuarioId) REFERENCES usuarios(id) ON DELETE SET NULL,
         INDEX idx_numero_solipede (numero_solipede),
         INDEX idx_data_criacao (data_criacao)
       )
     `);
     console.log('✅ Tabela prontuario criada/verificada');
+
+    try {
+      // Remover coluna usuario_id antiga se existir
+      await pool.query(`
+        ALTER TABLE prontuario DROP COLUMN usuario_id
+      `);
+      console.log('✅ Coluna usuario_id antiga removida');
+    } catch (err) {
+      console.log('ℹ️ Coluna usuario_id não existe ou erro:', err.message);
+    }
+
+    try {
+      // Adicionar coluna usuarioId se não existir
+      await pool.query(`
+        ALTER TABLE prontuario 
+        ADD COLUMN usuarioId INT NULL
+      `);
+      console.log('✅ Coluna usuarioId adicionada na tabela prontuario');
+    } catch (err) {
+      if (err.code === 'ER_DUP_FIELDNAME') {
+        console.log('✅ Coluna usuarioId já existe na tabela prontuario');
+      } else {
+        console.log('ℹ️ Erro ao adicionar usuarioId:', err.message);
+      }
+    }
+
+    try {
+      // Remover foreign key antiga se existir
+      await pool.query(`
+        ALTER TABLE prontuario DROP FOREIGN KEY fk_prontuario_usuario_id
+      `);
+      console.log('✅ Foreign key antiga removida');
+    } catch (err) {
+      console.log('ℹ️ Foreign key antiga não existe ou erro:', err.message);
+    }
+
+    try {
+      // Adicionar foreign key se não existir
+      await pool.query(`
+        ALTER TABLE prontuario 
+        ADD CONSTRAINT fk_prontuario_usuarioId 
+        FOREIGN KEY (usuarioId) REFERENCES usuarios(id) 
+        ON DELETE SET NULL
+      `);
+      console.log('✅ Foreign key usuarioId adicionada na tabela prontuario');
+    } catch (err) {
+      if (err.code === 'ER_DUP_KEYNAME') {
+        console.log('✅ Foreign key usuarioId já existe na tabela prontuario');
+      } else {
+        console.log('ℹ️ Foreign key pode já existir ou erro:', err.message);
+      }
+    }
 
     // 4. Adicionar índices para performance
     try {

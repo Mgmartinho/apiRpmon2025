@@ -148,6 +148,18 @@ static async adicionarHoras(req, res) {
     }
   }
 
+  // ===== Indicadores anuais por esquadrão (publico) =====
+  static async indicadoresAnuais(req, res) {
+    try {
+      const { ano } = req.query;
+      const resultado = await Solipede.indicadoresAnuaisPorEsquadrao(ano);
+      return res.status(200).json(resultado);
+    } catch (err) {
+      console.error("Erro indicadores anuais:", err);
+      return res.status(500).json({ error: "Erro ao buscar indicadores anuais" });
+    }
+  }
+
   static async atualizarHistorico(req, res) {
     try {
       const { id } = req.params;
@@ -165,29 +177,88 @@ static async adicionarHoras(req, res) {
     }
   }
 
+  // ===== Movimentação em lote (apenas movimentacao, não altera status) =====
+  static async movimentacaoEmLote(req, res) {
+    try {
+      const { numeros, novoStatus, senha } = req.body;
+      const usuario = req.usuario;
+
+      if (!usuario || !usuario.email || !usuario.id) {
+        return res.status(401).json({ error: "Usuário não autenticado" });
+      }
+      if (!Array.isArray(numeros) || numeros.length === 0) {
+        return res.status(400).json({ error: "Seleção de solípedes vazia" });
+      }
+      if (!novoStatus) {
+        return res.status(400).json({ error: "Status é obrigatório" });
+      }
+      if (!senha) {
+        return res.status(400).json({ error: "Senha é obrigatória" });
+      }
+
+      await Solipede.verificarSenhaUsuario(usuario.email, senha);
+
+      const mapaAnterior = await Solipede.atualizarMovimentacaoEmLote(
+        numeros,
+        novoStatus
+      );
+      await Solipede.registrarMovimentacoesProntuario(
+        numeros,
+        mapaAnterior,
+        novoStatus,
+        usuario.id
+      );
+
+      return res.status(200).json({ success: true, count: numeros.length });
+    } catch (err) {
+      console.error("Erro movimentação em lote:", err);
+      if (err.message === "Senha incorreta") {
+        return res.status(401).json({ error: "Senha incorreta" });
+      }
+      return res.status(500).json({ error: err.message });
+    }
+  }
+
   // ===== Prontuário =====
   static async salvarProntuario(req, res) {
     try {
       const { numero_solipede, tipo, observacao, recomendacoes } = req.body;
+      const usuarioId = req.usuario?.id;
+
+      console.log("\n📝 CONTROLLER: salvarProntuario");
+      console.log("   Dados do body:", { numero_solipede, tipo, observacao: observacao?.substring(0, 30) + "..." });
+      console.log("   req.usuario completo:", req.usuario);
+      console.log("   usuarioId extraído:", usuarioId, "Tipo:", typeof usuarioId);
 
       if (!numero_solipede || !observacao) {
+        console.log("❌ Validação falhou - faltam dados obrigatórios");
         return res.status(400).json({ error: "Número do solípede e observação são obrigatórios" });
       }
+
+      if (!usuarioId) {
+        console.log("⚠️ AVISO: usuarioId não foi encontrado!");
+      }
+
+      console.log("   Salvando prontuário com usuarioId:", usuarioId);
 
       const resultado = await Solipede.salvarProntuario({
         numero_solipede,
         tipo: tipo || "Observação Geral",
         observacao,
-        recomendacoes: recomendacoes || null
+        recomendacoes: recomendacoes || null,
+        usuario_id: usuarioId || null
       });
+
+      console.log("✅ Prontuário salvo com sucesso! ID:", resultado);
 
       res.status(201).json({ 
         success: true, 
         id: resultado,
+        usuario_id: usuarioId,
         message: "Prontuário salvo com sucesso" 
       });
     } catch (err) {
-      console.error("Erro ao salvar prontuário:", err);
+      console.error("❌ Erro ao salvar prontuário:", err);
       res.status(500).json({ error: "Erro ao salvar prontuário" });
     }
   }
@@ -195,7 +266,9 @@ static async adicionarHoras(req, res) {
   static async listarProntuario(req, res) {
     try {
       const { numero } = req.params;
+      console.log("📖 Listando prontuário para número:", numero);
       const prontuarios = await Solipede.listarProntuario(numero);
+      console.log("📖 Prontuários retornados:", prontuarios);
       res.status(200).json(prontuarios);
     } catch (err) {
       console.error("Erro ao listar prontuário:", err);

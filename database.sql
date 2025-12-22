@@ -5,9 +5,11 @@ CREATE TABLE IF NOT EXISTS prontuario (
   tipo VARCHAR(50) DEFAULT 'Observação Geral',
   observacao LONGTEXT NOT NULL,
   recomendacoes LONGTEXT,
+  usuarioId INT NULL,
   data_criacao TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
   data_atualizacao TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
   FOREIGN KEY (numero_solipede) REFERENCES solipede(numero) ON DELETE CASCADE,
+  FOREIGN KEY (usuarioId) REFERENCES usuarios(id) ON DELETE SET NULL,
   INDEX idx_numero_solipede (numero_solipede),
   INDEX idx_data_criacao (data_criacao)
 );
