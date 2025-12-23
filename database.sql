@@ -16,3 +16,27 @@ CREATE TABLE IF NOT EXISTS prontuario (
 
 ALTER TABLE historicoHoras ADD COLUMN usuario_id INT NULL;
 ALTER TABLE historicoHoras ADD FOREIGN KEY (usuario_id) REFERENCES usuarios(id) ON DELETE SET NULL;
+
+-- Criar tabela solipedes_excluidos (histórico de exclusões)
+CREATE TABLE IF NOT EXISTS solipedes_excluidos (
+  id INT AUTO_INCREMENT PRIMARY KEY,
+  -- Dados do solípede original
+  numero INT NOT NULL,
+  nome VARCHAR(100),
+  sexo VARCHAR(20),
+  pelagem VARCHAR(50),
+  raca VARCHAR(50),
+  DataNascimento DATE,
+  origem VARCHAR(100),
+  status VARCHAR(20),
+  esquadrao VARCHAR(50),
+  movimentacao VARCHAR(100),
+  alocacao VARCHAR(100),
+  -- Dados da exclusão
+  motivo_exclusao TEXT NOT NULL,
+  data_exclusao TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+  usuario_exclusao_id INT NULL,
+  FOREIGN KEY (usuario_exclusao_id) REFERENCES usuarios(id) ON DELETE SET NULL,
+  INDEX idx_numero (numero),
+  INDEX idx_data_exclusao (data_exclusao)
+);

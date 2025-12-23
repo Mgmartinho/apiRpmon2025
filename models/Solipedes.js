@@ -335,38 +335,119 @@ class Solipede {
   }
 
   /* ======================================================
-     MOVIMENTAÇÃO EM LOTE (STATUS)
+     MOVIMENTAÇÃO EM LOTE (apenas movimentacao, não altera status)
   ====================================================== */
-  static async atualizarMovimentacaoEmLote(numeros, novoStatus) {
+  static async atualizarMovimentacaoEmLote(numeros, novaMovimentacao) {
+    console.log("🔄 === INICIO atualizarMovimentacaoEmLote ===");
+    console.log("📥 Parâmetros recebidos:");
+    console.log("   - numeros:", numeros);
+    console.log("   - novaMovimentacao:", novaMovimentacao);
+    console.log("   - tipo novaMovimentacao:", typeof novaMovimentacao);
+    console.log("   - novaMovimentacao === null:", novaMovimentacao === null);
+    console.log("   - novaMovimentacao === '':", novaMovimentacao === "");
+    console.log("   - novaMovimentacao === undefined:", novaMovimentacao === undefined);
+    
     if (!Array.isArray(numeros) || numeros.length === 0) {
       throw new Error("Lista de solípedes vazia");
     }
 
-    // Buscar status atual
-    const [rows] = await pool.query(
-      `SELECT numero, status FROM solipede WHERE numero IN (${numeros.map(() => '?').join(',')})`,
-      numeros
-    );
-    const anteriores = new Map(rows.map((r) => [r.numero, r.status]));
+    // Buscar movimentacao e alocacao atual
+    const selectQuery = `SELECT numero, movimentacao, alocacao, status, esquadrao, origem FROM solipede WHERE numero IN (${numeros.map(() => '?').join(',')})`;
+    console.log("📋 SELECT Query:", selectQuery);
+    console.log("📋 SELECT Params:", numeros);
+    
+    const [rows] = await pool.query(selectQuery, numeros);
+    
+    console.log("📋 Dados ANTES do UPDATE:");
+    rows.forEach(r => {
+      console.log(`   Nº ${r.numero}: movimentacao="${r.movimentacao}", alocacao="${r.alocacao}", status="${r.status}", esquadrao="${r.esquadrao}", origem="${r.origem}"`);
+    });
+    
+    // Mapa com dados completos (movimentacao e alocacao)
+    const dadosAnteriores = new Map(rows.map((r) => [r.numero, {
+      movimentacao: r.movimentacao || null,
+      alocacao: r.alocacao || 'Não informada'
+    }]));
 
-    // Atualizar status e refletir na coluna movimentacao
-    await pool.query(
-      `UPDATE solipede SET status = ?, movimentacao = ? WHERE numero IN (${numeros.map(() => '?').join(',')})`,
-      [novoStatus, novoStatus, ...numeros]
-    );
+    // Determinar valor a ser salvo
+    // Se for null, undefined ou string vazia → limpa (null)
+    // Caso contrário → usa o valor fornecido
+    let valorMovimentacao;
+    if (novaMovimentacao === null || novaMovimentacao === undefined || novaMovimentacao === "") {
+      valorMovimentacao = null;
+      console.log("⚠️ novaMovimentacao está vazia/null - vai LIMPAR o campo no banco");
+    } else {
+      valorMovimentacao = novaMovimentacao;
+      console.log("✅ novaMovimentacao tem valor - vai SALVAR:", valorMovimentacao);
+    }
+    
+    const updateQuery = `UPDATE solipede SET movimentacao = ? WHERE numero IN (${numeros.map(() => '?').join(',')})`;
+    const updateParams = [valorMovimentacao, ...numeros];
+    
+    console.log("🔧 UPDATE Query:", updateQuery);
+    console.log("🔧 UPDATE Params:", updateParams);
+    console.log("🔧 Valor que será salvo no campo movimentacao:", valorMovimentacao);
+    
+    try {
+      const [result] = await pool.query(updateQuery, updateParams);
+      console.log("✅ UPDATE executado!");
+      console.log("   - affectedRows:", result.affectedRows);
+      console.log("   - changedRows:", result.changedRows);
+      console.log("   - info:", result.info);
+      
+      // Verificar depois do UPDATE
+      const [rowsDepois] = await pool.query(selectQuery, numeros);
+      console.log("📋 Dados DEPOIS do UPDATE:");
+      rowsDepois.forEach(r => {
+        console.log(`   Nº ${r.numero}: movimentacao="${r.movimentacao}", alocacao="${r.alocacao}", status="${r.status}", esquadrao="${r.esquadrao}", origem="${r.origem}"`);
+      });
+      
+    } catch (err) {
+      console.error("❌ ERRO no UPDATE:", err);
+      throw err;
+    }
 
-    return anteriores; // mapa numero -> statusAnterior
+    console.log("🔄 === FIM atualizarMovimentacaoEmLote ===\n");
+    return dadosAnteriores; // mapa numero -> {movimentacao, alocacao}
   }
 
-  static async registrarMovimentacoesProntuario(numeros, mapaMovAnterior, novoStatus, usuarioId) {
+  static async registrarMovimentacoesProntuario(numeros, dadosAnteriores, novaMovimentacao, observacaoCustom, usuarioId) {
+    console.log("📝 === registrarMovimentacoesProntuario ===");
+    console.log("   - numeros:", numeros);
+    console.log("   - dadosAnteriores size:", dadosAnteriores.size);
+    console.log("   - novaMovimentacao:", novaMovimentacao);
+    console.log("   - observacaoCustom:", observacaoCustom);
+    
     for (const numero of numeros) {
-      const anterior = mapaMovAnterior.get(numero) || 'Indefinido';
-      const observacao = `Status: ${anterior} → ${novoStatus || 'Indefinido'}`;
+      const dados = dadosAnteriores.get(numero);
+      console.log(`   📌 Processando nº ${numero}:`, dados);
+      
+      if (!dados) {
+        console.warn(`   ⚠️ Nenhum dado anterior encontrado para nº ${numero}`);
+        continue;
+      }
+      
+      const movAnterior = dados.movimentacao || 'Sem movimentação';
+      const alocacao = dados.alocacao;
+      const destino = novaMovimentacao || '(removido)';
+      
+      console.log(`   - movAnterior: "${movAnterior}"`);
+      console.log(`   - alocacao: "${alocacao}"`);
+      console.log(`   - destino: "${destino}"`);
+      
+      // Monta observação: Alocação + Movimentação (com quebras de linha)
+      let observacaoCompleta = `Alocação: ${alocacao}\n\nMovimentação: ${movAnterior} → ${destino}`;
+      if (observacaoCustom) {
+        observacaoCompleta += `\n\nDetalhes: ${observacaoCustom}`;
+      }
+      
+      console.log(`   📄 Observação completa:\n${observacaoCompleta}`);
+      
       try {
         await this.salvarProntuario({
           numero_solipede: numero,
-          tipo: 'Movimentação de Status',
-          observacao,
+          tipo: 'Movimentação',
+          observacao: observacaoCompleta,
           recomendacoes: null,
           usuario_id: usuarioId || null,
         });
@@ -469,6 +550,101 @@ class Solipede {
       [id]
     );
     return row;
+  }
+
+  /* ======================================================
+     EXCLUSÃO (SOFT DELETE) - MOVE PARA HISTÓRICO
+  ====================================================== */
+  static async excluirSolipede(numero, motivoExclusao, usuarioId, senha) {
+    const connection = await pool.getConnection();
+    
+    try {
+      await connection.beginTransaction();
+
+      // 1. Buscar dados do solípede
+      const [solipedes] = await connection.query(
+        "SELECT * FROM solipede WHERE numero = ?",
+        [numero]
+      );
+
+      if (!solipedes || solipedes.length === 0) {
+        throw new Error("Solípede não encontrado");
+      }
+
+      const solipede = solipedes[0];
+
+      // 2. Validar senha do usuário
+      const [usuarios] = await connection.query(
+        "SELECT senha FROM usuarios WHERE id = ?",
+        [usuarioId]
+      );
+
+      if (!usuarios || usuarios.length === 0) {
+        throw new Error("Usuário não encontrado");
+      }
+
+      const senhaValida = await bcrypt.compare(senha, usuarios[0].senha);
+      if (!senhaValida) {
+        throw new Error("Senha incorreta");
+      }
+
+      // 3. Inserir na tabela de excluídos
+      const insertSql = `
+        INSERT INTO solipedes_excluidos (
+          numero, nome, sexo, pelagem, raca, DataNascimento,
+          origem, status, esquadrao, movimentacao, alocacao,
+          motivo_exclusao, usuario_exclusao_id
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      `;
+
+      await connection.query(insertSql, [
+        solipede.numero,
+        solipede.nome,
+        solipede.sexo,
+        solipede.pelagem,
+        solipede.raca,
+        solipede.DataNascimento,
+        solipede.origem,
+        solipede.status,
+        solipede.esquadrao,
+        solipede.movimentacao,
+        solipede.alocacao,
+        motivoExclusao,
+        usuarioId,
+      ]);
+
+      // 4. Deletar da tabela principal (CASCADE deleta prontuário e histórico)
+      await connection.query("DELETE FROM solipede WHERE numero = ?", [numero]);
+
+      await connection.commit();
+      return { success: true, message: "Solípede excluído com sucesso" };
+    } catch (error) {
+      await connection.rollback();
+      throw error;
+    } finally {
+      connection.release();
+    }
+  }
+
+  static async listarExcluidos() {
+    const sql = `
+      SELECT 
+        se.*,
+        u.nome AS usuario_nome,
+        u.email AS usuario_email
+      FROM solipedes_excluidos se
+      LEFT JOIN usuarios u ON se.usuario_exclusao_id = u.id
+      ORDER BY se.data_exclusao DESC
+    `;
+
+    const [rows] = await pool.query(sql);
+    
+    return rows.map((s) => ({
+      ...s,
+      DataNascimento: s.DataNascimento
+        ? s.DataNascimento.toISOString().split("T")[0]
+        : null,
+    }));
   }
 
 }

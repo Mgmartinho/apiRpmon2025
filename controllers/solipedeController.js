@@ -180,8 +180,22 @@ static async adicionarHoras(req, res) {
   // ===== Movimentação em lote (apenas movimentacao, não altera status) =====
   static async movimentacaoEmLote(req, res) {
     try {
-      const { numeros, novoStatus, senha } = req.body;
+      console.log("\n🎯 === CONTROLLER movimentacaoEmLote CHAMADO ===");
+      console.log("📦 req.body completo:", req.body);
+      
+      const { numeros, novaMovimentacao, observacao, senha } = req.body;
       const usuario = req.usuario;
+
+      console.log("📥 Dados extraídos do body:");
+      console.log("   - numeros:", numeros);
+      console.log("   - novaMovimentacao:", novaMovimentacao);
+      console.log("   - tipo novaMovimentacao:", typeof novaMovimentacao);
+      console.log("   - novaMovimentacao === null:", novaMovimentacao === null);
+      console.log("   - novaMovimentacao === '':", novaMovimentacao === "");
+      console.log("   - length:", novaMovimentacao?.length);
+      console.log("   - observacao:", observacao);
+      console.log("   - senha:", senha ? "****" : "não informada");
+      console.log("   - usuario:", usuario);
 
       if (!usuario || !usuario.email || !usuario.id) {
         return res.status(401).json({ error: "Usuário não autenticado" });
@@ -189,29 +203,34 @@ static async adicionarHoras(req, res) {
       if (!Array.isArray(numeros) || numeros.length === 0) {
         return res.status(400).json({ error: "Seleção de solípedes vazia" });
       }
-      if (!novoStatus) {
-        return res.status(400).json({ error: "Status é obrigatório" });
-      }
       if (!senha) {
         return res.status(400).json({ error: "Senha é obrigatória" });
       }
 
+      console.log("✅ Validações passaram, verificando senha...");
       await Solipede.verificarSenhaUsuario(usuario.email, senha);
+      console.log("✅ Senha validada!");
 
-      const mapaAnterior = await Solipede.atualizarMovimentacaoEmLote(
+      console.log("🔄 Chamando atualizarMovimentacaoEmLote...");
+      const dadosAnteriores = await Solipede.atualizarMovimentacaoEmLote(
         numeros,
-        novoStatus
+        novaMovimentacao
       );
+      
+      console.log("📝 Chamando registrarMovimentacoesProntuario...");
       await Solipede.registrarMovimentacoesProntuario(
         numeros,
-        mapaAnterior,
-        novoStatus,
+        dadosAnteriores,
+        novaMovimentacao,
+        observacao,
         usuario.id
       );
 
+      console.log("✅ Movimentação concluída com sucesso!");
+      console.log("🎯 === FIM CONTROLLER ===\n");
       return res.status(200).json({ success: true, count: numeros.length });
     } catch (err) {
-      console.error("Erro movimentação em lote:", err);
+      console.error("❌ ERRO no controller:", err);
       if (err.message === "Senha incorreta") {
         return res.status(401).json({ error: "Senha incorreta" });
       }
@@ -301,6 +320,60 @@ static async adicionarHoras(req, res) {
     } catch (err) {
       console.error("Erro ao deletar prontuário:", err);
       res.status(500).json({ error: "Erro ao deletar prontuário" });
+    }
+  }
+
+  /* ======================================================
+     EXCLUSÃO (SOFT DELETE) - MOVE PARA HISTÓRICO
+  ====================================================== */
+  static async excluirSolipede(req, res) {
+    try {
+      const { numero, motivoExclusao, senha } = req.body;
+      const usuario = req.usuario;
+
+      console.log("🗑️ Exclusão solicitada:", { numero, motivoExclusao, usuarioId: usuario?.id });
+
+      if (!numero || !motivoExclusao || !senha) {
+        return res.status(400).json({
+          error: "Número, motivo de exclusão e senha são obrigatórios",
+        });
+      }
+
+      if (!usuario || !usuario.id) {
+        return res.status(401).json({ error: "Usuário não autenticado" });
+      }
+
+      const resultado = await Solipede.excluirSolipede(
+        numero,
+        motivoExclusao,
+        usuario.id,
+        senha
+      );
+
+      console.log("✅ Solípede excluído com sucesso:", numero);
+      res.status(200).json(resultado);
+    } catch (err) {
+      console.error("❌ Erro ao excluir solípede:", err);
+      
+      if (err.message === "Senha incorreta") {
+        return res.status(401).json({ error: "Senha incorreta" });
+      }
+      
+      if (err.message === "Solípede não encontrado" || err.message === "Usuário não encontrado") {
+        return res.status(404).json({ error: err.message });
+      }
+      
+      res.status(500).json({ error: "Erro ao excluir solípede" });
+    }
+  }
+
+  static async listarExcluidos(req, res) {
+    try {
+      const excluidos = await Solipede.listarExcluidos();
+      res.status(200).json(excluidos);
+    } catch (err) {
+      console.error("Erro ao listar excluídos:", err);
+      res.status(500).json({ error: "Erro ao listar excluídos" });
     }
   }
 }

@@ -10,7 +10,18 @@ const router = express.Router();
 // Listar todos
 router.get("/solipedes", SolipedeController.listar);
 
-// Buscar por número
+/* ======================================================
+   EXCLUSÃO (SOFT DELETE) - MOVE PARA HISTÓRICO
+   IMPORTANTE: Deve vir ANTES de /solipedes/:numero
+====================================================== */
+
+// Listar solípedes excluídos - ESPECÍFICO ANTES DO GENÉRICO
+router.get("/solipedes/excluidos/listar", SolipedeController.listarExcluidos);
+
+// Excluir solípede (move para tabela de excluídos)
+router.post("/solipedes/excluir", SolipedeController.excluirSolipede);
+
+// Buscar por número - GENÉRICO (com :numero)
 router.get("/solipedes/:numero", SolipedeController.obterPorNumero);
 
 // Criar
