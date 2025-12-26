@@ -241,11 +241,11 @@ static async adicionarHoras(req, res) {
   // ===== Prontuário =====
   static async salvarProntuario(req, res) {
     try {
-      const { numero_solipede, tipo, observacao, recomendacoes } = req.body;
+      const { numero_solipede, tipo, observacao, recomendacoes, tipo_baixa, data_lancamento, data_validade } = req.body;
       const usuarioId = req.usuario?.id;
 
       console.log("\n📝 CONTROLLER: salvarProntuario");
-      console.log("   Dados do body:", { numero_solipede, tipo, observacao: observacao?.substring(0, 30) + "..." });
+      console.log("   Dados do body:", { numero_solipede, tipo, observacao: observacao?.substring(0, 30) + "...", tipo_baixa });
       console.log("   req.usuario completo:", req.usuario);
       console.log("   usuarioId extraído:", usuarioId, "Tipo:", typeof usuarioId);
 
@@ -265,8 +265,23 @@ static async adicionarHoras(req, res) {
         tipo: tipo || "Observação Geral",
         observacao,
         recomendacoes: recomendacoes || null,
-        usuario_id: usuarioId || null
+        usuario_id: usuarioId || null,
+        tipo_baixa: tipo_baixa || null,
+        data_lancamento: data_lancamento || null,
+        data_validade: data_validade || null,
+        // Se for tipo "Baixa", marca como pendente
+        status_baixa: tipo === "Baixa" ? "pendente" : null
       });
+
+      // Se for tipo "Baixa", atualizar status do solípede
+      if (tipo === "Baixa") {
+        const novoStatus = tipo_baixa === "Baixa Eterna" 
+          ? "Baixado - Baixa Eterna" 
+          : "Baixado";
+        
+        await Solipede.atualizarStatus(numero_solipede, novoStatus);
+        console.log(`✅ Status do solípede ${numero_solipede} atualizado para: ${novoStatus}`);
+      }
 
       console.log("✅ Prontuário salvo com sucesso! ID:", resultado);
 

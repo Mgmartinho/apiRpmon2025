@@ -16,7 +16,11 @@ async function startServer(){
       console.warn('Não foi possível conectar ao MySQL:', err.message);
     }
 
-    app.listen(PORT, () => console.log(`Servidor rodando na porta ${PORT}`));
+    app.listen(PORT, '0.0.0.0', () => {
+      console.log(`Servidor rodando na porta ${PORT}`);
+      console.log(`Acesse localmente: http://localhost:${PORT}`);
+      console.log(`Acesse pela rede: http://10.37.20.250:${PORT}`);
+    });
     // Keep process alive in case the event loop would otherwise exit
     // (debugging aid — can be removed later)
     setInterval(() => {}, 1_000_000);

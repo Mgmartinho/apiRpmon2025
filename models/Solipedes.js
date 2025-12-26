@@ -92,6 +92,14 @@ class Solipede {
     return pool.query("DELETE FROM solipede WHERE numero = ?", [numero]);
   }
 
+  static async atualizarStatus(numero, status) {
+    const [result] = await pool.query(
+      `UPDATE solipede SET status = ? WHERE numero = ?`,
+      [status, numero]
+    );
+    return result.affectedRows > 0;
+  }
+
   /* ======================================================
      CARGA HORÁRIA — CONTROLE MENSAL
   ====================================================== */
@@ -462,8 +470,11 @@ class Solipede {
   ====================================================== */
   static async salvarProntuario(dados) {
     const sql = `
-      INSERT INTO prontuario (numero_solipede, tipo, observacao, recomendacoes, usuarioId, data_criacao)
-      VALUES (?, ?, ?, ?, ?, NOW())
+      INSERT INTO prontuario (
+        numero_solipede, tipo, observacao, recomendacoes, usuarioId, 
+        data_criacao, status_baixa, tipo_baixa, data_lancamento, data_validade
+      )
+      VALUES (?, ?, ?, ?, ?, NOW(), ?, ?, ?, ?)
     `;
 
     console.log("💾 Model salvarProntuario - dados recebidos:", dados);
@@ -473,7 +484,11 @@ class Solipede {
       dados.tipo,
       dados.observacao,
       dados.recomendacoes,
-      dados.usuario_id || null
+      dados.usuario_id || null,
+      dados.status_baixa || null,
+      dados.tipo_baixa || null,
+      dados.data_lancamento || null,
+      dados.data_validade || null
     ]);
 
     console.log("💾 INSERT executado, insertId:", resultado.insertId);

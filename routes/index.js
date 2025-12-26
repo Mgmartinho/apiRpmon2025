@@ -1,6 +1,7 @@
 import authMiddleware from "../middlewares/authMiddleware.js";
 import usuarioRoutes from "./usuarioRoutes.js";
 import solipedesRoutes from "./solipedesRoutes.js";
+import ferrageamentoRoutes from "./ferrageamentoRoutes.js";
 import SolipedeController from "../controllers/solipedeController.js";
 
 const routes = (app) => {
@@ -31,6 +32,7 @@ const routes = (app) => {
   // routes/index.js
   app.use("/auth", usuarioRoutes);
   app.use("/gestaoFVR", authMiddleware, solipedesRoutes);
+  app.use("/gestaoFVR", authMiddleware, ferrageamentoRoutes);
 };
 
 export default routes;

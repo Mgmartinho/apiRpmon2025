@@ -6,7 +6,7 @@ import routes from "./routes/index.js";
 const app = express();
 
 app.use(cors({
-  origin: "http://localhost:3001",
+  origin: ["http://localhost:3001", "http://10.37.20.250:3001"],
   methods: ["GET", "POST", "PUT", "DELETE"],
   allowedHeaders: ["Content-Type", "Authorization"]
 }));
