@@ -2,6 +2,7 @@ import authMiddleware from "../middlewares/authMiddleware.js";
 import usuarioRoutes from "./usuarioRoutes.js";
 import solipedesRoutes from "./solipedesRoutes.js";
 import ferrageamentoRoutes from "./ferrageamentoRoutes.js";
+import prontuarioRoutes from "./prontuarioRoutes.js";
 import SolipedeController from "../controllers/solipedeController.js";
 
 const routes = (app) => {
@@ -23,16 +24,28 @@ const routes = (app) => {
   // ROTA PÚBLICA - Listar solípedes
   app.get("/solipedes/publico", SolipedeController.listar);
 
+  // ROTA PÚBLICA - Horas do mês atual (otimizado)
+  app.get("/solipedes/horas-mes-atual", SolipedeController.horasMesAtual);
+
   // ROTA PÚBLICA - Histórico de horas
   app.get("/solipedes/historico/:numero", SolipedeController.historicoHoras);
+
+  // ROTA PÚBLICA - Histórico de movimentação
+  app.get("/solipedes/historico-movimentacao/:numero", SolipedeController.historicoMovimentacao);
+
+  // ROTA PÚBLICA - Prontuário (apenas restrições)
+  app.get("/solipedes/prontuario/:numero", SolipedeController.listarProntuarioRestricoes);
 
   // ROTA PÚBLICA - Indicadores anuais por esquadrão
   app.get("/solipedes/indicadores/anual", SolipedeController.indicadoresAnuais);
 
-  // routes/index.js
+  // ⚠️ IMPORTANTE: A ORDEM das rotas importa!
+  // Rotas mais específicas devem vir ANTES das rotas mais genéricas
+  
   app.use("/auth", usuarioRoutes);
-  app.use("/gestaoFVR", authMiddleware, solipedesRoutes);
+  app.use("/gestaoFVR/prontuario", authMiddleware, prontuarioRoutes);  // ✅ Mais específica PRIMEIRO
   app.use("/gestaoFVR", authMiddleware, ferrageamentoRoutes);
+  app.use("/gestaoFVR", authMiddleware, solipedesRoutes);
 };
 
 export default routes;

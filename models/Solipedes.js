@@ -88,7 +88,9 @@ class Solipede {
     );
   }
 
-  static async excluir(numero) {
+  // ⚠️ ATENÇÃO: Esta função deleta PERMANENTEMENTE sem histórico
+  // Use excluirSolipede() para soft delete (recomendado)
+  static async excluirPermanente(numero) {
     return pool.query("DELETE FROM solipede WHERE numero = ?", [numero]);
   }
 
@@ -519,6 +521,27 @@ class Solipede {
     console.log("📖 Query listarProntuario para número:", numero);
     const [rows] = await pool.query(sql, [numero]);
     console.log("📖 Rows retornadas:", JSON.stringify(rows, null, 2));
+    return rows;
+  }
+
+  // Listar apenas RESTRIÇÕES (para rota pública)
+  static async listarProntuarioRestricoes(numero) {
+    const sql = `
+      SELECT 
+        p.id, 
+        p.numero_solipede, 
+        p.tipo, 
+        p.observacao, 
+        p.recomendacoes, 
+        p.data_criacao
+      FROM prontuario p
+      WHERE p.numero_solipede = ? AND p.tipo = 'restrições'
+      ORDER BY p.data_criacao DESC
+    `;
+
+    console.log("📖 Query listarProntuarioRestricoes para número:", numero);
+    const [rows] = await pool.query(sql, [numero]);
+    console.log("📖 Restrições retornadas:", rows.length);
     return rows;
   }
 

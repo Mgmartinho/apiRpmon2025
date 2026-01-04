@@ -1,7 +1,67 @@
 import pool from "../config/mysqlConnect.js";
 
 class Prontuario {
+  static async listarTodos() {
+    console.log("═".repeat(80));
+    console.log("🗄️  MODEL: Prontuario.listarTodos()");
+    console.log("📊 Executando query com JOINS (usuarios + solipede)...");
+    console.log("═".repeat(80));
+    
+    const [rows] = await pool.query(
+      `
+      SELECT 
+        p.id,
+        p.tipo,
+        p.observacao,
+        p.recomendacoes,
+        p.usuarioId,
+        p.data_criacao,
+        p.numero_solipede,
+        p.status_baixa,
+        p.data_liberacao,
+        p.usuario_liberacao_id,
+        p.tipo_baixa,
+        p.data_lancamento,
+        p.data_validade,
+        p.status_conclusao,
+        p.data_conclusao,
+        p.usuario_conclusao_id,
+        DATE_FORMAT(p.data_criacao, '%d/%m/%Y') AS data,
+        DATE_FORMAT(p.data_criacao, '%H:%i') AS hora,
+        u.nome as usuario_nome,
+        u.re as usuario_registro,
+        u.perfil as usuario_perfil,
+        u.email as usuario_email,
+        ul.nome as usuario_liberacao_nome,
+        ul.re as usuario_liberacao_registro,
+        uc.nome as usuario_conclusao_nome,
+        uc.re as usuario_conclusao_registro,
+        s.nome as solipede_nome,
+        s.esquadrao as solipede_esquadrao
+      FROM prontuario p
+      LEFT JOIN usuarios u ON p.usuarioId = u.id
+      LEFT JOIN usuarios ul ON p.usuario_liberacao_id = ul.id
+      LEFT JOIN usuarios uc ON p.usuario_conclusao_id = uc.id
+      LEFT JOIN solipede s ON p.numero_solipede = s.numero
+      ORDER BY p.data_criacao DESC
+      `
+    );
+
+    console.log(`✅ Query executada com sucesso - Total: ${rows.length} registros`);
+    if (rows.length > 0) {
+      console.log(`📦 Campos do primeiro registro:`, Object.keys(rows[0]));
+    }
+    console.log("═".repeat(80));
+    console.log("\n");
+    return rows;
+  }
+
   static async listarPorSolipede(numero) {
+    console.log("═".repeat(80));
+    console.log("🗄️  MODEL: Prontuario.listarPorSolipede()");
+    console.log(`📊 Buscando prontuarios do solipede: ${numero}`);
+    console.log("═".repeat(80));
+    
     const [rows] = await pool.query(
       `
       SELECT 
@@ -40,6 +100,9 @@ class Prontuario {
       [numero]
     );
 
+    console.log(`✅ Query executada - Total: ${rows.length} registros para solipede ${numero}`);
+    console.log("═".repeat(80));
+    console.log("\n");
     return rows;
   }
 

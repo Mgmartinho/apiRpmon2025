@@ -1,4 +1,5 @@
 import Solipede from "../models/Solipedes.js";
+import pool from "../config/mysqlConnect.js";
 
 class SolipedeController {
 
@@ -40,18 +41,71 @@ static async listar(req, res, next) {
   static async atualizar(req, res, next) {
     try {
       const { numero } = req.params;
+      const { senha, usuarioId, esquadrao, esquadraoOrigem } = req.body;
+
+      // Se está tentando alterar esquadrão, validar senha
+      if (esquadrao && senha && usuarioId) {
+        console.log("🔄 Movimentação de esquadrão detectada");
+        console.log("   Dados:", { numero, esquadrao, esquadraoOrigem, usuarioId });
+        
+        const usuario = req.usuario;
+        if (!usuario || !usuario.email) {
+          return res.status(401).json({ error: "Usuário não autenticado" });
+        }
+
+        if (usuario.id !== usuarioId) {
+          return res.status(403).json({ error: "ID do usuário não corresponde" });
+        }
+
+        // Validar senha
+        await Solipede.verificarSenhaUsuario(usuario.email, senha);
+        console.log("✅ Senha validada");
+        
+        // Atualizar apenas o esquadrão
+        const [updateResult] = await pool.query(
+          "UPDATE solipede SET esquadrao = ? WHERE numero = ?",
+          [esquadrao, numero]
+        );
+        console.log("✅ Esquadrão atualizado:", updateResult);
+
+        // Registrar histórico de movimentação
+        try {
+          const [insertResult] = await pool.query(
+            `INSERT INTO historico_movimentacao 
+             (numero, esquadraoOrigem, esquadraoDestino, usuarioId, dataMovimentacao) 
+             VALUES (?, ?, ?, ?, NOW())`,
+            [numero, esquadraoOrigem, esquadrao, usuarioId]
+          );
+          console.log("✅ Histórico registrado:", insertResult);
+        } catch (err) {
+          console.error("❌ Erro ao registrar histórico:", err);
+          console.error("   Detalhes:", err.message);
+          console.error("   SQL State:", err.sqlState);
+          console.error("   SQL Message:", err.sqlMessage);
+        }
+
+        console.log(`✅ Solípede ${numero} movimentado para ${esquadrao}`);
+        return res.status(200).json({ message: "Movimentação realizada com sucesso" });
+      }
+
+      // Atualização normal sem validação de senha
       await Solipede.atualizar(numero, req.body);
       res.status(200).json({ message: "Atualizado com sucesso" });
     } catch (err) {
+      if (err.message === "Senha incorreta") {
+        return res.status(401).json({ error: "Senha incorreta" });
+      }
       next(err);
     }
   }
 
-  static async excluir(req, res, next) {
+  // ⚠️ ATENÇÃO: Esta função deleta PERMANENTEMENTE sem histórico
+  // Use excluirSolipede() para soft delete (recomendado)
+  static async excluirPermanente(req, res, next) {
     try {
       const { numero } = req.params;
-      await Solipede.excluir(numero);
-      res.status(200).json({ message: "Removido com sucesso" });
+      await Solipede.excluirPermanente(numero);
+      res.status(200).json({ message: "Removido permanentemente" });
     } catch (err) {
       next(err);
     }
@@ -310,6 +364,20 @@ static async adicionarHoras(req, res) {
     }
   }
 
+  // Rota pública - apenas restrições
+  static async listarProntuarioRestricoes(req, res) {
+    try {
+      const { numero } = req.params;
+      console.log("📖 Listando RESTRIÇÕES para número:", numero);
+      const restricoes = await Solipede.listarProntuarioRestricoes(numero);
+      console.log("📖 Restrições retornadas:", restricoes.length);
+      res.status(200).json(restricoes);
+    } catch (err) {
+      console.error("Erro ao listar restrições:", err);
+      res.status(500).json({ error: "Erro ao listar restrições" });
+    }
+  }
+
   static async atualizarProntuario(req, res) {
     try {
       const { id } = req.params;
@@ -389,6 +457,82 @@ static async adicionarHoras(req, res) {
     } catch (err) {
       console.error("Erro ao listar excluídos:", err);
       res.status(500).json({ error: "Erro ao listar excluídos" });
+    }
+  }
+
+  // ===== Histórico de Movimentação =====
+  static async historicoMovimentacao(req, res) {
+    try {
+      const { numero } = req.params;
+      
+      const [rows] = await pool.query(
+        `SELECT 
+          hm.id,
+          hm.dataMovimentacao,
+          hm.esquadraoOrigem,
+          hm.esquadraoDestino,
+          u.nome as usuarioNome
+         FROM historico_movimentacao hm
+         LEFT JOIN usuarios u ON hm.usuarioId = u.id
+         WHERE hm.numero = ?
+         ORDER BY hm.dataMovimentacao DESC`,
+        [numero]
+      );
+
+      res.status(200).json(rows);
+    } catch (err) {
+      console.error("Erro ao buscar histórico de movimentação:", err);
+      // Se a tabela não existe, retornar array vazio
+      res.status(200).json([]);
+    }
+  }
+
+  // ===== Horas do Mês Atual (otimizado) =====
+  static async horasMesAtual(req, res) {
+    try {
+      const hoje = new Date();
+      const mesAtual = hoje.getMonth() + 1;
+      const anoAtual = hoje.getFullYear();
+
+      console.log(`📅 Buscando horas para: Mês ${mesAtual}, Ano ${anoAtual}`);
+
+      // Primeiro, vamos verificar quantos registros existem no histórico para o mês atual
+      const [totalRegistros] = await pool.query(
+        `SELECT COUNT(*) as total FROM historicoHoras WHERE mes = ? AND ano = ?`,
+        [mesAtual, anoAtual]
+      );
+      console.log(`📊 Total de registros no histórico para ${mesAtual}/${anoAtual}: ${totalRegistros[0].total}`);
+
+      const [rows] = await pool.query(
+        `SELECT 
+          s.numero,
+          COALESCE(SUM(hh.horas), 0) as horasMesAtual
+         FROM solipede s
+         LEFT JOIN historicoHoras hh ON s.numero = hh.solipedeNumero
+           AND hh.mes = ?
+           AND hh.ano = ?
+         WHERE s.alocacao = 'RPMon'
+         GROUP BY s.numero`,
+        [mesAtual, anoAtual]
+      );
+
+      console.log(`✅ ${rows.length} solípedes encontrados`);
+
+      // Transformar em objeto { numero: horas }
+      const resultado = {};
+      rows.forEach(row => {
+        resultado[row.numero] = parseFloat(row.horasMesAtual) || 0;
+      });
+
+      // Contar quantos têm horas > 0
+      const comHoras = Object.values(resultado).filter(h => h > 0).length;
+      console.log(`📊 Solípedes com horas > 0: ${comHoras}/${rows.length}`);
+      console.log(`📊 Exemplo de dados:`, Object.entries(resultado).slice(0, 5));
+
+      res.status(200).json(resultado);
+    } catch (err) {
+      console.error("Erro ao buscar horas do mês atual:", err);
+      res.status(500).json({ error: "Erro ao buscar horas do mês atual" });
     }
   }
 }

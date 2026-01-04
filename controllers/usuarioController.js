@@ -138,7 +138,16 @@ class UsuarioController {
         return res.status(400).json({ error: "Perfil é obrigatório" });
       }
 
-      if (!["CONSULTA", "OPERADOR", "ADMINISTRADOR"].includes(perfil)) {
+      const perfisValidos = [
+        "Desenvolvedor",
+        "Veterinario Admin",
+        "Veterinario",
+        "Ferrador",
+        "Pagador de cavalo",
+        "Consulta"
+      ];
+
+      if (!perfisValidos.includes(perfil)) {
         return res.status(400).json({ error: "Perfil inválido" });
       }
 
@@ -194,9 +203,10 @@ class UsuarioController {
       const { id } = req.params;
       const { novaSenha } = req.body;
 
-      // Verifica se usuário logado é ADMINISTRADOR
-      if (req.usuario.perfil !== "ADMINISTRADOR") {
-        return res.status(403).json({ error: "Apenas administradores podem alterar senhas de outros usuários" });
+      // Verifica se usuário logado tem permissão (Desenvolvedor ou Veterinario Admin)
+      const perfisAutorizados = ["Desenvolvedor", "Veterinario Admin"];
+      if (!perfisAutorizados.includes(req.usuario.perfil)) {
+        return res.status(403).json({ error: "Apenas Desenvolvedor ou Veterinário Admin podem alterar senhas de outros usuários" });
       }
 
       if (!novaSenha) {

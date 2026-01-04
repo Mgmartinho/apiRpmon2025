@@ -5,8 +5,16 @@ import routes from "./routes/index.js";
 
 const app = express();
 
+// Desabilitar etag globalmente
+app.set('etag', false);
+
+// Configuração dinâmica de CORS
+const allowedOrigins = process.env.ALLOWED_ORIGINS
+  ? process.env.ALLOWED_ORIGINS.split(',')
+  : ['http://localhost:3001'];
+
 app.use(cors({
-  origin: ["http://localhost:3001", "http://10.37.20.250:3001"],
+  origin: allowedOrigins,
   methods: ["GET", "POST", "PUT", "DELETE"],
   allowedHeaders: ["Content-Type", "Authorization"]
 }));

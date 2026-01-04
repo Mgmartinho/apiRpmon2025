@@ -3,10 +3,52 @@ import Solipede from "../models/Solipedes.js";
 import bcrypt from "bcryptjs";
 
 class ProntuarioController {
+  static async listarTodos(req, res, next) {
+    console.log("\n");
+    console.log("═".repeat(80));
+    console.log("🎯 CONTROLLER: ProntuarioController.listarTodos()");
+    console.log("📍 Rota chamada: /gestaoFVR/prontuario/todos");
+    console.log("═".repeat(80));
+    console.log("\n");
+    try {
+      console.log("🔍 Executando Prontuario.listarTodos() no banco...");
+      const dados = await Prontuario.listarTodos();
+      console.log(`✅ Total de registros encontrados: ${dados.length}`);
+      if (dados.length > 0) {
+        console.log("📦 Exemplo do primeiro registro:", JSON.stringify(dados[0], null, 2));
+      }
+      
+      // Desabilitar completamente o cache
+      res.set({
+        'Cache-Control': 'no-store, no-cache, must-revalidate, proxy-revalidate',
+        'Pragma': 'no-cache',
+        'Expires': '0',
+        'Surrogate-Control': 'no-store'
+      });
+      
+      // Remover etag para forçar resposta completa
+      res.removeHeader('ETag');
+      
+      console.log(`🚀 Enviando ${dados.length} registros para o frontend\n`);
+      res.status(200).json(dados);
+    } catch (err) {
+      console.error("❌ ERRO ao listar todos os prontuários:", err);
+      next(err);
+    }
+  }
+
   static async listarPorSolipede(req, res, next) {
+    console.log("\n");
+    console.log("═".repeat(80));
+    console.log("📋 CONTROLLER: ProntuarioController.listarPorSolipede()");
+    console.log(`📍 Rota chamada: /gestaoFVR/prontuario/${req.params.numero_solipede}`);
+    console.log("═".repeat(80));
+    console.log("\n");
     try {
       const { numero_solipede } = req.params;
+      console.log(`🔍 Buscando prontuários do solípede: ${numero_solipede}`);
       const dados = await Prontuario.listarPorSolipede(numero_solipede);
+      console.log(`✅ Total de registros encontrados: ${dados.length}\n`);
       res.status(200).json(dados);
     } catch (err) {
       next(err);

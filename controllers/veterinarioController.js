@@ -40,11 +40,13 @@ class VeterinarioController {
     }
   };
 
+  // ⚠️ ATENÇÃO: Esta função usa DELETE permanente
+  // TODO: Implementar soft delete para veterinários se necessário
   static excluir = async (req, res, next) => {
     try {
       const { re } = req.params;
-      await Solipede.excluir(re);
-      res.status(200).json({ message: "Removido com sucesso" });
+      await Solipede.excluirPermanente(re);
+      res.status(200).json({ message: "Removido permanentemente" });
     } catch (err) {
       next(err);
     }

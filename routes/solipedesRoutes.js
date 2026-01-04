@@ -30,8 +30,8 @@ router.post("/solipedes", SolipedeController.criar);
 // Atualizar
 router.put("/solipedes/:numero", SolipedeController.atualizar);
 
-// Excluir
-router.delete("/solipedes/:numero", SolipedeController.excluir);
+// ⚠️ ROTA DESABILITADA - Excluir permanente (use POST /solipedes/excluir para soft delete)
+// router.delete("/solipedes/:numero", SolipedeController.excluirPermanente);
 
 
 /* ======================================================
@@ -54,6 +54,18 @@ router.post(
 /* ======================================================
    HISTÓRICO DE HORAS
 ====================================================== */
+
+// Horas do mês atual (otimizado) - NOVO ENDPOINT
+router.get(
+  "/solipedes/horas-mes-atual",
+  SolipedeController.horasMesAtual
+);
+
+// Historico de movimentação - ESPECÍFICO ANTES DO MENSAL
+router.get(
+  "/solipedes/historico-movimentacao/:numero",
+  SolipedeController.historicoMovimentacao
+);
 
 // Historico mensal (para gráficos) - DEVE VIR ANTES DA ROTA COM :numero
 router.get(
