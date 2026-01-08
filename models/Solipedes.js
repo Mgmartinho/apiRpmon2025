@@ -474,9 +474,9 @@ class Solipede {
     const sql = `
       INSERT INTO prontuario (
         numero_solipede, tipo, observacao, recomendacoes, usuarioId, 
-        data_criacao, status_baixa, tipo_baixa, data_lancamento, data_validade
+        data_criacao, status_baixa, tipo_baixa, data_lancamento, data_validade, foi_responsavel_pela_baixa, precisa_baixar
       )
-      VALUES (?, ?, ?, ?, ?, NOW(), ?, ?, ?, ?)
+      VALUES (?, ?, ?, ?, ?, NOW(), ?, ?, ?, ?, ?, ?)
     `;
 
     console.log("💾 Model salvarProntuario - dados recebidos:", dados);
@@ -490,7 +490,9 @@ class Solipede {
       dados.status_baixa || null,
       dados.tipo_baixa || null,
       dados.data_lancamento || null,
-      dados.data_validade || null
+      dados.data_validade || null,
+      dados.foi_responsavel_pela_baixa || 0,
+      dados.precisa_baixar || null
     ]);
 
     console.log("💾 INSERT executado, insertId:", resultado.insertId);
@@ -506,21 +508,52 @@ class Solipede {
         p.observacao, 
         p.recomendacoes, 
         p.data_criacao,
+        p.data_atualizacao,
+        p.data_validade,
+        p.data_lancamento,
+        p.status_baixa,
+        p.data_liberacao,
+        p.usuario_liberacao_id,
+        p.tipo_baixa,
+        p.status_conclusao,
+        p.data_conclusao,
+        p.usuario_conclusao_id,
+        p.foi_responsavel_pela_baixa,
+        p.precisa_baixar,
         p.usuarioId,
         u.id as usuario_id_check,
         u.nome as usuario_nome,
         u.re as usuario_registro,
         u.perfil as usuario_perfil,
-        u.email as usuario_email
+        u.email as usuario_email,
+        uc.nome as usuario_conclusao_nome,
+        uc.re as usuario_conclusao_registro,
+        ul.nome as usuario_liberacao_nome,
+        ul.re as usuario_liberacao_registro
       FROM prontuario p
       LEFT JOIN usuarios u ON p.usuarioId = u.id
+      LEFT JOIN usuarios uc ON p.usuario_conclusao_id = uc.id
+      LEFT JOIN usuarios ul ON p.usuario_liberacao_id = ul.id
       WHERE p.numero_solipede = ?
       ORDER BY p.data_criacao DESC
     `;
 
     console.log("📖 Query listarProntuario para número:", numero);
     const [rows] = await pool.query(sql, [numero]);
-    console.log("📖 Rows retornadas:", JSON.stringify(rows, null, 2));
+    console.log("📖 Total de rows retornadas:", rows.length);
+    
+    // Debug: mostrar campo foi_responsavel_pela_baixa
+    rows.forEach((row, index) => {
+      if (row.tipo === "Tratamento") {
+        console.log(`🔍 Model - Tratamento ${index}:`, {
+          id: row.id,
+          tipo: row.tipo,
+          foi_responsavel_pela_baixa: row.foi_responsavel_pela_baixa,
+          typeof_foi: typeof row.foi_responsavel_pela_baixa
+        });
+      }
+    });
+    
     return rows;
   }
 
@@ -533,26 +566,105 @@ class Solipede {
         p.tipo, 
         p.observacao, 
         p.recomendacoes, 
-        p.data_criacao
+        p.data_criacao,
+        p.data_validade
       FROM prontuario p
-      WHERE p.numero_solipede = ? AND p.tipo = 'restrições'
+      WHERE p.numero_solipede = ? 
+        AND p.tipo = 'restrições'
+        AND (p.status_conclusao IS NULL OR p.status_conclusao != 'concluido')
+        AND (p.data_validade IS NULL OR p.data_validade >= CURDATE())
       ORDER BY p.data_criacao DESC
     `;
 
     console.log("📖 Query listarProntuarioRestricoes para número:", numero);
     const [rows] = await pool.query(sql, [numero]);
-    console.log("📖 Restrições retornadas:", rows.length);
+    console.log("📖 Restrições ATIVAS retornadas:", rows.length);
+    return rows;
+  }
+  
+  static async listarObservacoesGerais(numero) {
+    const sql = `
+      SELECT 
+        p.id, 
+        p.numero_solipede, 
+        p.tipo, 
+        p.observacao, 
+        p.recomendacoes, 
+        p.data_criacao
+      FROM prontuario p
+      WHERE p.numero_solipede = ? 
+        AND p.tipo = 'Observações Comportamentais'
+      ORDER BY p.data_criacao DESC
+    `;
+
+    console.log("📝 Query listarObservacoesGerais para número:", numero);
+    const [rows] = await pool.query(sql, [numero]);
+    console.log("📝 Observações Comportamentais retornadas:", rows.length);
+    return rows;
+  }
+  
+  static async listarFerrageamentosPublico() {
+    const sql = `
+      SELECT 
+        f.id,
+        f.solipede_numero,
+        f.data_ferrageamento,
+        f.prazo_validade,
+        f.proximo_ferrageamento,
+        f.tamanho_ferradura,
+        f.responsavel,
+        f.observacoes,
+        s.nome as solipede_nome
+      FROM ferrageamentos f
+      LEFT JOIN solipede s ON f.solipede_numero = s.numero
+      ORDER BY f.data_ferrageamento DESC
+    `;
+
+    console.log("🔧 Query listarFerrageamentosPublico");
+    const [rows] = await pool.query(sql);
+    console.log("🔧 Ferrageamentos retornados:", rows.length);
     return rows;
   }
 
   static async atualizarProntuario(id, dados) {
+    // Construir UPDATE dinâmico apenas para campos fornecidos
+    const campos = [];
+    const valores = [];
+
+    if (dados.observacao !== undefined) {
+      campos.push('observacao = ?');
+      valores.push(dados.observacao);
+    }
+
+    if (dados.recomendacoes !== undefined) {
+      campos.push('recomendacoes = ?');
+      // Tratar string vazia como null
+      valores.push(dados.recomendacoes && dados.recomendacoes.trim() !== '' ? dados.recomendacoes : null);
+    }
+
+    // Apenas atualizar data_validade se for explicitamente fornecido
+    if (dados.data_validade !== undefined) {
+      campos.push('data_validade = ?');
+      // Tratar string vazia como null
+      valores.push(dados.data_validade && dados.data_validade.trim() !== '' ? dados.data_validade : null);
+    }
+
+    if (campos.length === 0) {
+      throw new Error('Nenhum campo para atualizar');
+    }
+
+    valores.push(id);
+    
     const sql = `
       UPDATE prontuario
-      SET tipo = ?, observacao = ?, recomendacoes = ?
+      SET ${campos.join(', ')}
       WHERE id = ?
     `;
 
-    await pool.query(sql, [dados.tipo, dados.observacao, dados.recomendacoes, id]);
+    console.log('📝 UPDATE dinâmico:', sql);
+    console.log('📝 Valores:', valores);
+
+    await pool.query(sql, valores);
   }
 
   static async deletarProntuario(id) {
@@ -683,6 +795,23 @@ class Solipede {
         ? s.DataNascimento.toISOString().split("T")[0]
         : null,
     }));
+  }
+
+  static async atualizarStatus(numero, novoStatus, usuarioId) {
+    const sql = `
+      UPDATE solipede 
+      SET status = ?, 
+          usuario_atualizacao_id = ?,
+          data_atualizacao = CURRENT_TIMESTAMP
+      WHERE numero = ?
+    `;
+    const [resultado] = await pool.query(sql, [novoStatus, usuarioId, numero]);
+    
+    if (resultado.affectedRows === 0) {
+      throw new Error(`Solípede ${numero} não encontrado`);
+    }
+    
+    return resultado;
   }
 
 }

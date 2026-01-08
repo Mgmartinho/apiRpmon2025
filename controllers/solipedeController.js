@@ -6,14 +6,20 @@ class SolipedeController {
   // ===== CRUD =====
 static async listar(req, res, next) {
   try {
+    console.log('📋 Requisição para listar solípedes recebida');
+    console.log('   Origin:', req.get('origin'));
+    console.log('   Query:', req.query);
+    
     const { alocacao } = req.query;
 
     const dados = await Solipede.listar({
       alocacao
     });
 
+    console.log(`✅ ${dados.length} solípedes encontrados`);
     res.status(200).json(dados);
   } catch (err) {
+    console.error('❌ Erro ao listar solípedes:', err.message);
     next(err);
   }
 }
@@ -95,6 +101,57 @@ static async listar(req, res, next) {
       if (err.message === "Senha incorreta") {
         return res.status(401).json({ error: "Senha incorreta" });
       }
+      next(err);
+    }
+  }
+
+  // Atualizar apenas status do solípede
+  static async atualizarStatus(req, res, next) {
+    try {
+      const { numero } = req.params;
+      const { status } = req.body;
+      const usuario = req.usuario;
+
+      console.log("🔄 Alteração de status detectada");
+      console.log("   Solípede:", numero, "| Novo status:", status);
+      console.log("   Usuário:", usuario.nome, "(ID:", usuario.id, ")");
+
+      if (!status) {
+        return res.status(400).json({ error: "Status é obrigatório" });
+      }
+
+      if (!usuario || !usuario.id) {
+        return res.status(401).json({ error: "Usuário não autenticado" });
+      }
+
+      // Validar status permitido
+      const statusPermitidos = ["Operante", "Baixado", "Em Tratamento", "Descanso"];
+      if (!statusPermitidos.includes(status)) {
+        return res.status(400).json({ error: "Status inválido" });
+      }
+
+      // Buscar status anterior
+      const solipedeAnterior = await Solipede.buscarPorNumero(numero);
+      if (!solipedeAnterior) {
+        return res.status(404).json({ error: "Solípede não encontrado" });
+      }
+
+      const statusAnterior = solipedeAnterior.status;
+
+      // Atualizar status com auditoria
+      await Solipede.atualizarStatus(numero, status, usuario.id);
+      
+      console.log("✅ Status atualizado com sucesso");
+      res.json({ 
+        success: true, 
+        message: `Status alterado de "${statusAnterior}" para "${status}" com sucesso`,
+        statusAnterior,
+        statusNovo: status,
+        dataAtualizacao: new Date(),
+        usuario: usuario.nome
+      });
+    } catch (err) {
+      console.error("❌ Erro ao atualizar status:", err);
       next(err);
     }
   }
@@ -295,11 +352,11 @@ static async adicionarHoras(req, res) {
   // ===== Prontuário =====
   static async salvarProntuario(req, res) {
     try {
-      const { numero_solipede, tipo, observacao, recomendacoes, tipo_baixa, data_lancamento, data_validade } = req.body;
+      let { numero_solipede, tipo, observacao, recomendacoes, tipo_baixa, data_lancamento, data_validade, precisa_baixar, senha } = req.body;
       const usuarioId = req.usuario?.id;
 
       console.log("\n📝 CONTROLLER: salvarProntuario");
-      console.log("   Dados do body:", { numero_solipede, tipo, observacao: observacao?.substring(0, 30) + "...", tipo_baixa });
+      console.log("   Dados do body:", { numero_solipede, tipo, observacao: observacao?.substring(0, 30) + "...", tipo_baixa, data_validade, precisa_baixar, senha: senha ? "****" : "não fornecida" });
       console.log("   req.usuario completo:", req.usuario);
       console.log("   usuarioId extraído:", usuarioId, "Tipo:", typeof usuarioId);
 
@@ -310,8 +367,48 @@ static async adicionarHoras(req, res) {
 
       if (!usuarioId) {
         console.log("⚠️ AVISO: usuarioId não foi encontrado!");
+        return res.status(401).json({ error: "Usuário não autenticado" });
       }
 
+      // 🔐 VALIDAR SENHA (se fornecida)
+      if (senha) {
+        console.log("🔐 Validando senha do usuário...");
+        const usuario = req.usuario;
+        
+        if (!usuario || !usuario.email) {
+          return res.status(401).json({ error: "Usuário não autenticado" });
+        }
+
+        try {
+          const Solipede = (await import("../models/Solipedes.js")).default;
+          await Solipede.verificarSenhaUsuario(usuario.email, senha);
+          console.log("✅ Senha validada com sucesso");
+        } catch (error) {
+          console.log("❌ Senha inválida:", error.message);
+          return res.status(401).json({ error: "Senha inválida" });
+        }
+      }
+
+      // 🩺 LÓGICA MELHORADA PARA TRATAMENTOS
+      let deveBaixarSolipede = false;
+      let foiResponsavelPelaBaixa = 0;
+
+      console.log("   🔍 Verificando se é tratamento:", { tipo, precisa_baixar });
+
+      if (tipo === "Tratamento" && precisa_baixar === "sim") {
+        console.log("   🩺 Tratamento precisa baixar o solípede (precisa_baixar='sim')");
+        deveBaixarSolipede = true;
+        foiResponsavelPelaBaixa = 1; // Este tratamento É responsável pela baixa
+      } else if (tipo === "Tratamento" && precisa_baixar === "nao") {
+        console.log("   ℹ️ Tratamento NÃO precisa baixar o solípede (precisa_baixar='nao')");
+        deveBaixarSolipede = false;
+        foiResponsavelPelaBaixa = 0; // Este tratamento NÃO é responsável pela baixa
+      } else if (tipo === "Tratamento") {
+        console.log("   ⚠️ ATENÇÃO: Tratamento sem informação de precisa_baixar (será marcado como 0)");
+        foiResponsavelPelaBaixa = 0;
+      }
+
+      console.log("   📊 Resultado da análise:", { deveBaixarSolipede, foiResponsavelPelaBaixa });
       console.log("   Salvando prontuário com usuarioId:", usuarioId);
 
       const resultado = await Solipede.salvarProntuario({
@@ -323,21 +420,48 @@ static async adicionarHoras(req, res) {
         tipo_baixa: tipo_baixa || null,
         data_lancamento: data_lancamento || null,
         data_validade: data_validade || null,
-        // Se for tipo "Baixa", marca como pendente
+        foi_responsavel_pela_baixa: foiResponsavelPelaBaixa,
+        precisa_baixar: tipo === "Tratamento" ? precisa_baixar : null, // Salvar valor original
         status_baixa: tipo === "Baixa" ? "pendente" : null
       });
 
       // Se for tipo "Baixa", atualizar status do solípede
       if (tipo === "Baixa") {
-        const novoStatus = tipo_baixa === "Baixa Eterna" 
+        const novoStatusBaixa = tipo_baixa === "Baixa Eterna" 
           ? "Baixado - Baixa Eterna" 
           : "Baixado";
         
-        await Solipede.atualizarStatus(numero_solipede, novoStatus);
-        console.log(`✅ Status do solípede ${numero_solipede} atualizado para: ${novoStatus}`);
+        await Solipede.atualizarStatus(numero_solipede, novoStatusBaixa, usuarioId);
+        console.log(`✅ Status do solípede ${numero_solipede} atualizado para: ${novoStatusBaixa}`);
+      }
+      
+      // Se for tratamento que precisa baixar, atualizar status do solípede
+      if (tipo === "Tratamento" && deveBaixarSolipede) {
+        console.log(`   🔄 Baixando solípede ${numero_solipede}...`);
+        console.log(`   UsuarioId: ${usuarioId}`);
+        
+        try {
+          await Solipede.atualizarStatus(numero_solipede, "Baixado", usuarioId);
+          console.log(`   ✅ Solípede ${numero_solipede} baixado com sucesso!`);
+        } catch (errorStatus) {
+          console.error(`   ❌ Erro ao baixar solípede:`, errorStatus);
+          throw errorStatus;
+        }
+      } else if (tipo === "Tratamento" && !deveBaixarSolipede) {
+        console.log("   ℹ️ Tratamento não irá baixar o solípede (precisa_baixar='nao')");
       }
 
       console.log("✅ Prontuário salvo com sucesso! ID:", resultado);
+      
+      // Verificar o registro salvo
+      if (tipo === "Tratamento") {
+        console.log("🔍 Verificando registro de tratamento salvo...");
+        const [registroSalvo] = await pool.query(
+          "SELECT id, tipo, foi_responsavel_pela_baixa FROM prontuario WHERE id = ?",
+          [resultado]
+        );
+        console.log("📝 Registro salvo no banco:", registroSalvo[0]);
+      }
 
       res.status(201).json({ 
         success: true, 
@@ -356,7 +480,20 @@ static async adicionarHoras(req, res) {
       const { numero } = req.params;
       console.log("📖 Listando prontuário para número:", numero);
       const prontuarios = await Solipede.listarProntuario(numero);
-      console.log("📖 Prontuários retornados:", prontuarios);
+      console.log("📖 Prontuários retornados:", prontuarios.length, "registros");
+      
+      // Debug: verificar campo foi_responsavel_pela_baixa nos tratamentos
+      prontuarios.forEach((p, index) => {
+        if (p.tipo === "Tratamento") {
+          console.log(`🩺 Tratamento ${index}:`, {
+            id: p.id,
+            tipo: p.tipo,
+            foi_responsavel_pela_baixa: p.foi_responsavel_pela_baixa,
+            observacao: p.observacao?.substring(0, 50)
+          });
+        }
+      });
+      
       res.status(200).json(prontuarios);
     } catch (err) {
       console.error("Erro ao listar prontuário:", err);
@@ -377,20 +514,62 @@ static async adicionarHoras(req, res) {
       res.status(500).json({ error: "Erro ao listar restrições" });
     }
   }
+  
+  // Rota pública - observações gerais (exceto restrições)
+  static async listarObservacoesGerais(req, res) {
+    try {
+      const { numero } = req.params;
+      console.log("📝 Listando OBSERVAÇÕES GERAIS para número:", numero);
+      const observacoes = await Solipede.listarObservacoesGerais(numero);
+      console.log("📝 Observações retornadas:", observacoes.length);
+      res.status(200).json(observacoes);
+    } catch (err) {
+      console.error("Erro ao listar observações:", err);
+      res.status(500).json({ error: "Erro ao listar observações" });
+    }
+  }
+  
+  // Rota pública - ferrageamentos
+  static async listarFerrageamentosPublico(req, res) {
+    try {
+      console.log("🔧 Listando FERRAGEAMENTOS públicos");
+      const ferrageamentos = await Solipede.listarFerrageamentosPublico();
+      console.log("🔧 Ferrageamentos retornados:", ferrageamentos.length);
+      res.status(200).json(ferrageamentos);
+    } catch (err) {
+      console.error("Erro ao listar ferrageamentos:", err);
+      res.status(500).json({ error: "Erro ao listar ferrageamentos" });
+    }
+  }
 
   static async atualizarProntuario(req, res) {
     try {
       const { id } = req.params;
-      const { observacao, recomendacoes, tipo } = req.body;
+      const { observacao, recomendacoes, data_validade } = req.body;
+      const usuarioId = req.usuario?.id;
+
+      console.log("═".repeat(60));
+      console.log("✏️  ATUALIZANDO PRONTUÁRIO");
+      console.log("ID:", id);
+      console.log("Usuário ID:", usuarioId);
+      console.log("Dados recebidos:", JSON.stringify(req.body, null, 2));
+      console.log("═".repeat(60));
+
+      if (!usuarioId) {
+        return res.status(401).json({ error: "Usuário não autenticado" });
+      }
 
       if (!observacao) {
         return res.status(400).json({ error: "Observação é obrigatória" });
       }
 
-      await Solipede.atualizarProntuario(id, { observacao, recomendacoes, tipo });
+      // Usar função de auditoria do modelo Prontuario
+      const Prontuario = (await import("../models/Prontuario.js")).default;
+      await Prontuario.atualizarComAuditoria(id, { observacao, recomendacoes, data_validade }, usuarioId);
+      
       res.status(200).json({ success: true, message: "Prontuário atualizado com sucesso" });
     } catch (err) {
-      console.error("Erro ao atualizar prontuário:", err);
+      console.error("❌ Erro ao atualizar prontuário:", err);
       res.status(500).json({ error: "Erro ao atualizar prontuário" });
     }
   }

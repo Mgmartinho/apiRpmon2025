@@ -30,6 +30,9 @@ router.post("/solipedes", SolipedeController.criar);
 // Atualizar
 router.put("/solipedes/:numero", SolipedeController.atualizar);
 
+// Atualizar apenas status
+router.patch("/solipedes/:numero/status", SolipedeController.atualizarStatus);
+
 // ⚠️ ROTA DESABILITADA - Excluir permanente (use POST /solipedes/excluir para soft delete)
 // router.delete("/solipedes/:numero", SolipedeController.excluirPermanente);
 

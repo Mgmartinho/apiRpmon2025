@@ -112,56 +112,214 @@ class ProntuarioController {
     }
   }
 
+  static async contarTratamentosEmAndamento(req, res, next) {
+    try {
+      const { numero } = req.params;
+      const total = await Prontuario.contarTratamentosEmAndamento(numero);
+      res.status(200).json({ total });
+    } catch (err) {
+      next(err);
+    }
+  }
+
   static async concluirTratamento(req, res, next) {
     try {
       const { id } = req.params;
-      const { email, senha } = req.body;
+      const { senha } = req.body;
+      const usuarioLogado = req.usuario; // Pega do token JWT via authMiddleware
 
-      console.log(`🔐 Tentativa de conclusão - ID: ${id}, Email: ${email}`);
+      console.log(`🔐 Tentativa de conclusão - ID: ${id}, Usuário: ${usuarioLogado?.nome} (${usuarioLogado?.email})`);
 
-      if (!email || !senha) {
-        console.log("❌ Email ou senha não fornecidos");
-        return res.status(400).json({ error: "Email e senha são obrigatórios" });
+      if (!senha) {
+        console.log("❌ Senha não fornecida");
+        return res.status(400).json({ error: "Senha é obrigatória" });
       }
 
-      // Buscar e validar o usuário
+      if (!usuarioLogado || !usuarioLogado.id) {
+        console.log("❌ Usuário não autenticado");
+        return res.status(401).json({ error: "Usuário não autenticado" });
+      }
+
+      // Buscar senha do usuário logado para validar
       const pool = (await import("../config/mysqlConnect.js")).default;
       const [usuarios] = await pool.query(
-        "SELECT id, nome, re, senha FROM usuarios WHERE email = ?",
-        [email]
+        "SELECT id, nome, re, senha FROM usuarios WHERE id = ?",
+        [usuarioLogado.id]
       );
 
       if (!usuarios || usuarios.length === 0) {
-        console.log(`❌ Usuário não encontrado: ${email}`);
-        return res.status(401).json({ error: "Credenciais inválidas" });
+        console.log(`❌ Usuário não encontrado no banco: ${usuarioLogado.id}`);
+        return res.status(401).json({ error: "Usuário não encontrado" });
       }
 
       const usuario = usuarios[0];
-      console.log(`✅ Usuário encontrado: ${usuario.nome}`);
+      console.log(`✅ Validando senha para: ${usuario.nome}`);
       
       const senhaValida = await bcrypt.compare(senha, usuario.senha);
 
       if (!senhaValida) {
         console.log("❌ Senha inválida");
-        return res.status(401).json({ error: "Credenciais inválidas" });
+        return res.status(401).json({ error: "Senha inválida" });
       }
 
       console.log("✅ Senha válida");
+
+      // Buscar o número do solípede antes de concluir
+      const [tratamentos] = await pool.query(
+        "SELECT numero_solipede FROM prontuario WHERE id = ?",
+        [id]
+      );
+
+      if (!tratamentos || tratamentos.length === 0) {
+        console.log(`❌ Tratamento não encontrado - ID: ${id}`);
+        return res.status(404).json({ error: "Tratamento não encontrado" });
+      }
+
+      const numeroSolipede = tratamentos[0].numero_solipede;
+      console.log(`🐴 Solípede: ${numeroSolipede}`);
+
+      // Verificar se este tratamento foi responsável por baixar o solípede
+      const [tratamentoInfo] = await pool.query(
+        "SELECT foi_responsavel_pela_baixa FROM prontuario WHERE id = ?",
+        [id]
+      );
+
+      const foiResponsavelPelaBaixa = tratamentoInfo && tratamentoInfo.length > 0 && tratamentoInfo[0].foi_responsavel_pela_baixa === 1;
+      console.log(`📋 Tratamento ${id} foi responsável pela baixa? ${foiResponsavelPelaBaixa ? 'SIM' : 'NÃO'}`);
 
       // Concluir o tratamento
       const concluido = await Prontuario.concluirTratamento(id, usuario.id);
 
       if (!concluido) {
-        console.log(`❌ Não foi possível concluir - ID: ${id}`);
-        return res.status(400).json({ error: "Tratamento já foi concluído ou não encontrado" });
+        console.log(`⚠️ Tratamento ${id} já estava concluído anteriormente`);
+        return res.status(409).json({ 
+          error: "Tratamento já foi concluído anteriormente",
+          code: "ALREADY_CONCLUDED"
+        });
       }
 
       console.log(`✅ Tratamento ${id} concluído por ${usuario.nome}`);
 
+      // Verificar quantos tratamentos QUE BAIXARAM ainda estão em andamento
+      const [tratamentosComBaixaAtivos] = await pool.query(
+        `SELECT COUNT(*) as total FROM prontuario 
+         WHERE numero_solipede = ? 
+         AND tipo = 'Tratamento' 
+         AND foi_responsavel_pela_baixa = 1
+         AND (status_conclusao IS NULL OR status_conclusao = 'em_andamento')`,
+        [numeroSolipede]
+      );
+      
+      const tratamentosQueBaixaramRestantes = tratamentosComBaixaAtivos[0].total;
+      console.log(`📊 Tratamentos que baixaram o solípede e ainda estão ativos: ${tratamentosQueBaixaramRestantes}`);
+
+      // Buscar o status atual do solípede
+      const Solipede = (await import("../models/Solipedes.js")).default;
+      const [solipedes] = await pool.query(
+        "SELECT status FROM solipede WHERE numero = ?",
+        [numeroSolipede]
+      );
+
+      let statusAlterado = false;
+      if (solipedes && solipedes.length > 0) {
+        const statusAtual = solipedes[0].status;
+        console.log(`🔍 Status atual do solípede: ${statusAtual}`);
+
+        // LÓGICA MELHORADA: Só retorna para Ativo se:
+        // 1. Este tratamento foi responsável por baixar (foi_responsavel_pela_baixa=1)
+        // 2. E não há mais NENHUM tratamento com foi_responsavel_pela_baixa=1 ativo
+        if (statusAtual === "Baixado" && foiResponsavelPelaBaixa && tratamentosQueBaixaramRestantes === 0) {
+          console.log(`🔄 Este tratamento baixou e não há mais tratamentos que baixaram. Alterando status para Ativo`);
+          await Solipede.atualizarStatus(numeroSolipede, "Ativo");
+          statusAlterado = true;
+        } else if (statusAtual === "Baixado" && !foiResponsavelPelaBaixa) {
+          console.log(`ℹ️ Este tratamento NÃO baixou o solípede. Status permanece inalterado.`);
+        } else if (statusAtual === "Baixado" && tratamentosQueBaixaramRestantes > 0) {
+          console.log(`⚠️ Solípede continua Baixado - ainda há ${tratamentosQueBaixaramRestantes} tratamento(s) que baixaram o solípede`);
+        }
+      }
+
       // Retornar dados do usuário que concluiu
       res.status(200).json({
         success: true,
-        message: "Tratamento concluído com sucesso",
+        message: tratamentosQueBaixaramRestantes > 0 
+          ? `Tratamento concluído. Ainda há ${tratamentosQueBaixaramRestantes} tratamento(s) que baixaram o solípede em andamento.`
+          : statusAlterado 
+            ? "Tratamento concluído e status do solípede alterado para Ativo" 
+            : "Tratamento concluído com sucesso",
+        usuario_conclusao: {
+          id: usuario.id,
+          nome: usuario.nome,
+          re: usuario.re
+        },
+        tratamentosRestantes: tratamentosQueBaixaramRestantes,
+        statusAlterado
+      });
+    } catch (err) {
+      console.error("❌ Erro ao concluir tratamento:", err);
+      next(err);
+    }
+  }
+
+  static async concluirRegistro(req, res, next) {
+    try {
+      const { id } = req.params;
+      const { senha } = req.body;
+      const usuarioLogado = req.usuario; // Pega do token JWT via authMiddleware
+
+      console.log(`🔐 Tentativa de conclusão de registro - ID: ${id}, Usuário: ${usuarioLogado?.nome} (${usuarioLogado?.email})`);
+
+      if (!senha) {
+        console.log("❌ Senha não fornecida");
+        return res.status(400).json({ error: "Senha é obrigatória" });
+      }
+
+      if (!usuarioLogado || !usuarioLogado.id) {
+        console.log("❌ Usuário não autenticado");
+        return res.status(401).json({ error: "Usuário não autenticado" });
+      }
+
+      // Buscar senha do usuário logado para validar
+      const pool = (await import("../config/mysqlConnect.js")).default;
+      const [usuarios] = await pool.query(
+        "SELECT id, nome, re, senha FROM usuarios WHERE id = ?",
+        [usuarioLogado.id]
+      );
+
+      if (!usuarios || usuarios.length === 0) {
+        console.log(`❌ Usuário não encontrado no banco: ${usuarioLogado.id}`);
+        return res.status(401).json({ error: "Usuário não encontrado" });
+      }
+
+      const usuario = usuarios[0];
+      console.log(`✅ Validando senha para: ${usuario.nome}`);
+      
+      const senhaValida = await bcrypt.compare(senha, usuario.senha);
+
+      if (!senhaValida) {
+        console.log("❌ Senha inválida");
+        return res.status(401).json({ error: "Senha inválida" });
+      }
+
+      console.log("✅ Senha válida");
+
+      // Concluir o registro
+      const concluido = await Prontuario.concluirRegistro(id, usuario.id);
+
+      if (!concluido) {
+        console.log(`⚠️ Registro ${id} já estava concluído anteriormente`);
+        return res.status(409).json({ 
+          error: "Registro já foi concluído anteriormente",
+          code: "ALREADY_CONCLUDED"
+        });
+      }
+
+      console.log(`✅ Registro ${id} concluído por ${usuario.nome}`);
+
+      // Retornar dados do usuário que concluiu
+      res.status(200).json({
+        success: true,
+        message: "Registro concluído com sucesso",
         usuario_conclusao: {
           id: usuario.id,
           nome: usuario.nome,
@@ -169,7 +327,7 @@ class ProntuarioController {
         }
       });
     } catch (err) {
-      console.error("❌ Erro ao concluir tratamento:", err);
+      console.error("❌ Erro ao concluir registro:", err);
       next(err);
     }
   }
