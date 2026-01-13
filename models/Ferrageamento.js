@@ -91,7 +91,6 @@ class Ferrageamento {
         AND f1.data_ferrageamento = f2.max_data
       ) f
       LEFT JOIN solipede s ON f.solipede_numero = s.numero
-      WHERE s.status IN ('Ativo')
       ORDER BY dias_restantes ASC, f.proximo_ferrageamento ASC
     `;
     
