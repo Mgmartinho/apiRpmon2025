@@ -288,33 +288,37 @@ static async adicionarHoras(req, res) {
     }
   }
 
-  // ===== Movimentação em lote (apenas movimentacao, não altera status) =====
+  // ===== Movimentação em lote (atualiza ALOCAÇÃO, não altera status) =====
   static async movimentacaoEmLote(req, res) {
     try {
       console.log("\n🎯 === CONTROLLER movimentacaoEmLote CHAMADO ===");
       console.log("📦 req.body completo:", req.body);
       
-      const { numeros, novaMovimentacao, observacao, senha } = req.body;
+      const { numeros, novaAlocacao, observacao, senha } = req.body;
       const usuario = req.usuario;
 
       console.log("📥 Dados extraídos do body:");
       console.log("   - numeros:", numeros);
-      console.log("   - novaMovimentacao:", novaMovimentacao);
-      console.log("   - tipo novaMovimentacao:", typeof novaMovimentacao);
-      console.log("   - novaMovimentacao === null:", novaMovimentacao === null);
-      console.log("   - novaMovimentacao === '':", novaMovimentacao === "");
-      console.log("   - length:", novaMovimentacao?.length);
+      console.log("   - novaAlocacao:", novaAlocacao);
+      console.log("   - tipo novaAlocacao:", typeof novaAlocacao);
       console.log("   - observacao:", observacao);
       console.log("   - senha:", senha ? "****" : "não informada");
       console.log("   - usuario:", usuario);
 
       if (!usuario || !usuario.email || !usuario.id) {
+        console.log("❌ Usuário não autenticado");
         return res.status(401).json({ error: "Usuário não autenticado" });
       }
       if (!Array.isArray(numeros) || numeros.length === 0) {
+        console.log("❌ Seleção de solípedes vazia");
         return res.status(400).json({ error: "Seleção de solípedes vazia" });
       }
+      if (!novaAlocacao || novaAlocacao === "") {
+        console.log("❌ Nova alocação é obrigatória");
+        return res.status(400).json({ error: "Nova alocação é obrigatória" });
+      }
       if (!senha) {
+        console.log("❌ Senha é obrigatória");
         return res.status(400).json({ error: "Senha é obrigatória" });
       }
 
@@ -325,23 +329,33 @@ static async adicionarHoras(req, res) {
       console.log("🔄 Chamando atualizarMovimentacaoEmLote...");
       const dadosAnteriores = await Solipede.atualizarMovimentacaoEmLote(
         numeros,
-        novaMovimentacao
+        novaAlocacao
       );
+      console.log("✅ atualizarMovimentacaoEmLote retornou:", dadosAnteriores);
       
       console.log("📝 Chamando registrarMovimentacoesProntuario...");
+      console.log("   - numeros:", numeros);
+      console.log("   - dadosAnteriores size:", dadosAnteriores.size);
+      console.log("   - novaAlocacao:", novaAlocacao);
+      console.log("   - observacao:", observacao);
+      console.log("   - usuario.id:", usuario.id);
+      
       await Solipede.registrarMovimentacoesProntuario(
         numeros,
         dadosAnteriores,
-        novaMovimentacao,
+        novaAlocacao,
         observacao,
         usuario.id
       );
+      
+      console.log("✅ registrarMovimentacoesProntuario concluído!");
 
       console.log("✅ Movimentação concluída com sucesso!");
       console.log("🎯 === FIM CONTROLLER ===\n");
       return res.status(200).json({ success: true, count: numeros.length });
     } catch (err) {
       console.error("❌ ERRO no controller:", err);
+      console.error("   Stack:", err.stack);
       if (err.message === "Senha incorreta") {
         return res.status(401).json({ error: "Senha incorreta" });
       }
@@ -482,13 +496,15 @@ static async adicionarHoras(req, res) {
       const prontuarios = await Solipede.listarProntuario(numero);
       console.log("📖 Prontuários retornados:", prontuarios.length, "registros");
       
-      // Debug: verificar campo foi_responsavel_pela_baixa nos tratamentos
+      // Debug: verificar campos foi_responsavel_pela_baixa E precisa_baixar nos tratamentos
       prontuarios.forEach((p, index) => {
         if (p.tipo === "Tratamento") {
-          console.log(`🩺 Tratamento ${index}:`, {
+          console.log(`🩺 Controller - Tratamento ${index}:`, {
             id: p.id,
             tipo: p.tipo,
             foi_responsavel_pela_baixa: p.foi_responsavel_pela_baixa,
+            precisa_baixar: p.precisa_baixar,
+            typeof_precisa: typeof p.precisa_baixar,
             observacao: p.observacao?.substring(0, 50)
           });
         }

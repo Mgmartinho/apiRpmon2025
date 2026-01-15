@@ -345,24 +345,24 @@ class Solipede {
   }
 
   /* ======================================================
-     MOVIMENTAÇÃO EM LOTE (apenas movimentacao, não altera status)
+     MOVIMENTAÇÃO EM LOTE (atualiza ALOCAÇÃO, não altera status)
   ====================================================== */
-  static async atualizarMovimentacaoEmLote(numeros, novaMovimentacao) {
+  static async atualizarMovimentacaoEmLote(numeros, novaAlocacao) {
     console.log("🔄 === INICIO atualizarMovimentacaoEmLote ===");
     console.log("📥 Parâmetros recebidos:");
     console.log("   - numeros:", numeros);
-    console.log("   - novaMovimentacao:", novaMovimentacao);
-    console.log("   - tipo novaMovimentacao:", typeof novaMovimentacao);
-    console.log("   - novaMovimentacao === null:", novaMovimentacao === null);
-    console.log("   - novaMovimentacao === '':", novaMovimentacao === "");
-    console.log("   - novaMovimentacao === undefined:", novaMovimentacao === undefined);
+    console.log("   - novaAlocacao:", novaAlocacao);
+    console.log("   - tipo novaAlocacao:", typeof novaAlocacao);
+    console.log("   - novaAlocacao === null:", novaAlocacao === null);
+    console.log("   - novaAlocacao === '':", novaAlocacao === "");
+    console.log("   - novaAlocacao === undefined:", novaAlocacao === undefined);
     
     if (!Array.isArray(numeros) || numeros.length === 0) {
       throw new Error("Lista de solípedes vazia");
     }
 
-    // Buscar movimentacao e alocacao atual
-    const selectQuery = `SELECT numero, movimentacao, alocacao, status, esquadrao, origem FROM solipede WHERE numero IN (${numeros.map(() => '?').join(',')})`;
+    // Buscar alocacao atual
+    const selectQuery = `SELECT numero, alocacao, status, esquadrao, origem FROM solipede WHERE numero IN (${numeros.map(() => '?').join(',')})`;
     console.log("📋 SELECT Query:", selectQuery);
     console.log("📋 SELECT Params:", numeros);
     
@@ -370,33 +370,27 @@ class Solipede {
     
     console.log("📋 Dados ANTES do UPDATE:");
     rows.forEach(r => {
-      console.log(`   Nº ${r.numero}: movimentacao="${r.movimentacao}", alocacao="${r.alocacao}", status="${r.status}", esquadrao="${r.esquadrao}", origem="${r.origem}"`);
+      console.log(`   Nº ${r.numero}: alocacao="${r.alocacao}", status="${r.status}", esquadrao="${r.esquadrao}", origem="${r.origem}"`);
     });
     
-    // Mapa com dados completos (movimentacao e alocacao)
+    // Mapa com dados completos (alocacao anterior)
     const dadosAnteriores = new Map(rows.map((r) => [r.numero, {
-      movimentacao: r.movimentacao || null,
-      alocacao: r.alocacao || 'Não informada'
+      alocacao_anterior: r.alocacao || 'Não definida'
     }]));
 
-    // Determinar valor a ser salvo
-    // Se for null, undefined ou string vazia → limpa (null)
-    // Caso contrário → usa o valor fornecido
-    let valorMovimentacao;
-    if (novaMovimentacao === null || novaMovimentacao === undefined || novaMovimentacao === "") {
-      valorMovimentacao = null;
-      console.log("⚠️ novaMovimentacao está vazia/null - vai LIMPAR o campo no banco");
-    } else {
-      valorMovimentacao = novaMovimentacao;
-      console.log("✅ novaMovimentacao tem valor - vai SALVAR:", valorMovimentacao);
+    // Determinar valor a ser salvo no campo alocacao
+    if (!novaAlocacao || novaAlocacao === "") {
+      throw new Error("Nova alocação é obrigatória");
     }
     
-    const updateQuery = `UPDATE solipede SET movimentacao = ? WHERE numero IN (${numeros.map(() => '?').join(',')})`;
-    const updateParams = [valorMovimentacao, ...numeros];
+    console.log("✅ novaAlocacao tem valor - vai SALVAR:", novaAlocacao);
+    
+    const updateQuery = `UPDATE solipede SET alocacao = ? WHERE numero IN (${numeros.map(() => '?').join(',')})`;
+    const updateParams = [novaAlocacao, ...numeros];
     
     console.log("🔧 UPDATE Query:", updateQuery);
     console.log("🔧 UPDATE Params:", updateParams);
-    console.log("🔧 Valor que será salvo no campo movimentacao:", valorMovimentacao);
+    console.log("🔧 Valor que será salvo no campo alocacao:", novaAlocacao);
     
     try {
       const [result] = await pool.query(updateQuery, updateParams);
@@ -409,7 +403,7 @@ class Solipede {
       const [rowsDepois] = await pool.query(selectQuery, numeros);
       console.log("📋 Dados DEPOIS do UPDATE:");
       rowsDepois.forEach(r => {
-        console.log(`   Nº ${r.numero}: movimentacao="${r.movimentacao}", alocacao="${r.alocacao}", status="${r.status}", esquadrao="${r.esquadrao}", origem="${r.origem}"`);
+        console.log(`   Nº ${r.numero}: alocacao="${r.alocacao}", status="${r.status}", esquadrao="${r.esquadrao}", origem="${r.origem}"`);
       });
       
     } catch (err) {
@@ -418,35 +412,35 @@ class Solipede {
     }
 
     console.log("🔄 === FIM atualizarMovimentacaoEmLote ===\n");
-    return dadosAnteriores; // mapa numero -> {movimentacao, alocacao}
+    return dadosAnteriores; // mapa numero -> {alocacao_anterior}
   }
 
-  static async registrarMovimentacoesProntuario(numeros, dadosAnteriores, novaMovimentacao, observacaoCustom, usuarioId) {
+  static async registrarMovimentacoesProntuario(numeros, dadosAnteriores, novaAlocacao, observacaoCustom, usuarioId) {
     console.log("📝 === registrarMovimentacoesProntuario ===");
     console.log("   - numeros:", numeros);
     console.log("   - dadosAnteriores size:", dadosAnteriores.size);
-    console.log("   - novaMovimentacao:", novaMovimentacao);
+    console.log("   - dadosAnteriores:", Array.from(dadosAnteriores.entries()));
+    console.log("   - novaAlocacao:", novaAlocacao);
     console.log("   - observacaoCustom:", observacaoCustom);
+    console.log("   - usuarioId:", usuarioId);
     
     for (const numero of numeros) {
       const dados = dadosAnteriores.get(numero);
-      console.log(`   📌 Processando nº ${numero}:`, dados);
+      console.log(`\n   📌 Processando nº ${numero}:`, dados);
       
       if (!dados) {
         console.warn(`   ⚠️ Nenhum dado anterior encontrado para nº ${numero}`);
         continue;
       }
       
-      const movAnterior = dados.movimentacao || 'Sem movimentação';
-      const alocacao = dados.alocacao;
-      const destino = novaMovimentacao || '(removido)';
+      const alocacaoAnterior = dados.alocacao_anterior || 'Não definida';
+      const alocacaoNova = novaAlocacao;
       
-      console.log(`   - movAnterior: "${movAnterior}"`);
-      console.log(`   - alocacao: "${alocacao}"`);
-      console.log(`   - destino: "${destino}"`);
+      console.log(`   - alocacaoAnterior: "${alocacaoAnterior}"`);
+      console.log(`   - alocacaoNova: "${alocacaoNova}"`);
       
-      // Monta observação: Alocação + Movimentação (com quebras de linha)
-      let observacaoCompleta = `Alocação: ${alocacao}\n\nMovimentação: ${movAnterior} → ${destino}`;
+      // Monta observação: Alteração de Alocação (com quebras de linha)
+      let observacaoCompleta = `Alocação alterada de "${alocacaoAnterior}" para "${alocacaoNova}"`;
       if (observacaoCustom) {
         observacaoCompleta += `\n\nDetalhes: ${observacaoCustom}`;
       }
@@ -454,17 +448,29 @@ class Solipede {
       console.log(`   📄 Observação completa:\n${observacaoCompleta}`);
       
       try {
-        await this.salvarProntuario({
-          numero_solipede: numero,
-          tipo: 'Movimentação',
-          observacao: observacaoCompleta,
-          recomendacoes: null,
-          usuario_id: usuarioId || null,
-        });
+        console.log(`   🔄 Executando INSERT no prontuário...`);
+        const [result] = await pool.query(
+          `INSERT INTO prontuario (numero_solipede, tipo, observacao, usuarioId, data_criacao, alocacao_anterior, alocacao_nova, origem, destino)
+           VALUES (?, 'Movimentação', ?, ?, NOW(), ?, ?, ?, ?)`,
+          [numero, observacaoCompleta, usuarioId, alocacaoAnterior, alocacaoNova, alocacaoAnterior, alocacaoNova]
+        );
+        console.log(`   ✅ Prontuário inserido! insertId: ${result.insertId}, affectedRows: ${result.affectedRows}`);
+        
+        // Verifica se realmente foi inserido
+        const [verificacao] = await pool.query(
+          `SELECT * FROM prontuario WHERE id = ?`,
+          [result.insertId]
+        );
+        console.log(`   🔍 Verificação do registro inserido:`, verificacao[0]);
+        
       } catch (e) {
-        console.error(`Erro ao registrar movimentação no prontuário (${numero}):`, e.message);
+        console.error(`   ❌ Erro ao registrar movimentação no prontuário (${numero}):`, e);
+        console.error(`   ❌ SQL Error code:`, e.code);
+        console.error(`   ❌ SQL Error message:`, e.sqlMessage);
+        throw e; // Re-throw para não silenciar o erro
       }
     }
+    console.log("📝 === FIM registrarMovimentacoesProntuario ===\n");
   }
 
   /* ======================================================
