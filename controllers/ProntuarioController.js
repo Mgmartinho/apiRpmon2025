@@ -331,6 +331,113 @@ class ProntuarioController {
       next(err);
     }
   }
+
+  static async excluirRegistro(req, res, next) {
+    try {
+      const { id } = req.params;
+      const { senha } = req.body;
+      const usuarioLogado = req.usuario; // Pega do token JWT via authMiddleware
+
+      console.log(`🗑️ Tentativa de exclusão de registro - ID: ${id}, Usuário: ${usuarioLogado?.nome} (${usuarioLogado?.email})`);
+
+      if (!senha) {
+        console.log("❌ Senha não fornecida");
+        return res.status(400).json({ error: "Senha é obrigatória" });
+      }
+
+      if (!usuarioLogado || !usuarioLogado.id) {
+        console.log("❌ Usuário não autenticado");
+        return res.status(401).json({ error: "Usuário não autenticado" });
+      }
+
+      // Buscar senha do usuário logado para validar
+      const pool = (await import("../config/mysqlConnect.js")).default;
+      const [usuarios] = await pool.query(
+        "SELECT id, nome, re, senha FROM usuarios WHERE id = ?",
+        [usuarioLogado.id]
+      );
+
+      if (!usuarios || usuarios.length === 0) {
+        console.log(`❌ Usuário não encontrado no banco: ${usuarioLogado.id}`);
+        return res.status(401).json({ error: "Usuário não encontrado" });
+      }
+
+      const usuario = usuarios[0];
+      console.log(`✅ Validando senha para: ${usuario.nome}`);
+      
+      const senhaValida = await bcrypt.compare(senha, usuario.senha);
+
+      if (!senhaValida) {
+        console.log("❌ Senha inválida");
+        return res.status(401).json({ error: "Senha inválida" });
+      }
+
+      console.log("✅ Senha válida");
+
+      // Buscar informações do registro antes de excluir
+      const [registros] = await pool.query(
+        "SELECT numero_solipede, tipo, precisa_baixar FROM prontuario WHERE id = ?",
+        [id]
+      );
+
+      if (!registros || registros.length === 0) {
+        console.log(`❌ Registro ${id} não encontrado`);
+        return res.status(404).json({ error: "Registro não encontrado" });
+      }
+
+      const registro = registros[0];
+      const numeroSolipede = registro.numero_solipede;
+      const tipo = registro.tipo;
+      const precisaBaixar = registro.precisa_baixar;
+
+      console.log(`📋 Registro a ser excluído: Tipo=${tipo}, Solípede=${numeroSolipede}, PrecisaBaixar=${precisaBaixar}`);
+
+      // Excluir o registro
+      const excluido = await Prontuario.excluir(id);
+
+      if (!excluido) {
+        console.log(`❌ Erro ao excluir registro ${id}`);
+        return res.status(500).json({ error: "Erro ao excluir registro" });
+      }
+
+      console.log(`✅ Registro ${id} excluído por ${usuario.nome}`);
+
+      // Se era um tratamento que baixou o solípede, verificar se deve voltar para Ativo
+      if (tipo === "Tratamento" && precisaBaixar === "sim") {
+        const [tratamentosComBaixaAtivos] = await pool.query(
+          `SELECT COUNT(*) as total FROM prontuario 
+           WHERE numero_solipede = ? 
+           AND tipo = 'Tratamento' 
+           AND precisa_baixar = 'sim'
+           AND (status_conclusao IS NULL OR status_conclusao = 'em_andamento')`,
+          [numeroSolipede]
+        );
+        
+        const tratamentosQueBaixaramRestantes = tratamentosComBaixaAtivos[0].total;
+        console.log(`📊 Tratamentos que baixam o solípede restantes: ${tratamentosQueBaixaramRestantes}`);
+
+        // Se não há mais tratamentos que baixaram, retornar status para Ativo
+        if (tratamentosQueBaixaramRestantes === 0) {
+          const Solipede = (await import("../models/Solipedes.js")).default;
+          await Solipede.atualizarStatus(numeroSolipede, "Ativo");
+          console.log(`🔄 Status do solípede ${numeroSolipede} alterado para Ativo`);
+        }
+      }
+
+      res.status(200).json({
+        success: true,
+        message: "Registro excluído com sucesso",
+        usuario_exclusao: {
+          id: usuario.id,
+          nome: usuario.nome,
+          re: usuario.re
+        }
+      });
+    } catch (err) {
+      console.error("❌ Erro ao excluir registro:", err);
+      next(err);
+    }
+  }
 }
 
 export default ProntuarioController;

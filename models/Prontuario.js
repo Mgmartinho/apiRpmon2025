@@ -200,6 +200,15 @@ class Prontuario {
     return result.affectedRows > 0;
   }
 
+  static async excluir(prontuarioId) {
+    const [result] = await pool.query(
+      `DELETE FROM prontuario WHERE id = ?`,
+      [prontuarioId]
+    );
+
+    return result.affectedRows > 0;
+  }
+
   static async atualizarComAuditoria(prontuarioId, dados, usuarioId) {
     const campos = [];
     const valores = [];

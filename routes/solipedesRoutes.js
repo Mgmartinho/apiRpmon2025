@@ -11,14 +11,23 @@ const router = express.Router();
 router.get("/solipedes", SolipedeController.listar);
 
 /* ======================================================
-   EXCLUSÃO (SOFT DELETE) - MOVE PARA HISTÓRICO
+   EXCLUSÃO - ARQUIVA EM TABELAS SEPARADAS
    IMPORTANTE: Deve vir ANTES de /solipedes/:numero
 ====================================================== */
 
 // Listar solípedes excluídos - ESPECÍFICO ANTES DO GENÉRICO
 router.get("/solipedes/excluidos/listar", SolipedeController.listarExcluidos);
 
-// Excluir solípede (move para tabela de excluídos)
+// Buscar dados do solípede excluído
+router.get("/solipedes/excluidos/:numero", SolipedeController.obterSolipedeExcluido);
+
+// Buscar prontuário arquivado de solípede excluído
+router.get("/solipedes/excluidos/:numero/prontuario", SolipedeController.obterProntuarioExcluido);
+
+// Buscar ferrageamentos arquivados de solípede excluído
+router.get("/solipedes/excluidos/:numero/ferrageamentos", SolipedeController.obterFerrageamentosExcluidos);
+
+// Excluir solípede (move para tabelas de arquivo e deleta)
 router.post("/solipedes/excluir", SolipedeController.excluirSolipede);
 
 // Buscar por número - GENÉRICO (com :numero)

@@ -655,6 +655,50 @@ static async adicionarHoras(req, res) {
     }
   }
 
+  // Buscar prontuário arquivado de solípede excluído
+  static async obterProntuarioExcluido(req, res) {
+    try {
+      const { numero } = req.params;
+      const prontuarios = await Solipede.listarProntuarioExcluido(numero);
+      res.status(200).json(prontuarios);
+    } catch (err) {
+      console.error("Erro ao buscar prontuário arquivado:", err);
+      res.status(500).json({ error: "Erro ao buscar prontuário arquivado" });
+    }
+  }
+
+  // Buscar dados do solípede excluído
+  static async obterSolipedeExcluido(req, res) {
+    try {
+      const { numero } = req.params;
+      const [solipedes] = await pool.query(
+        "SELECT * FROM solipedes_excluidos WHERE numero = ?",
+        [numero]
+      );
+      
+      if (solipedes.length === 0) {
+        return res.status(404).json({ error: "Solípede excluído não encontrado" });
+      }
+      
+      res.status(200).json(solipedes[0]);
+    } catch (err) {
+      console.error("Erro ao buscar solípede excluído:", err);
+      res.status(500).json({ error: "Erro ao buscar solípede excluído" });
+    }
+  }
+
+  // Buscar ferrageamentos arquivados de solípede excluído
+  static async obterFerrageamentosExcluidos(req, res) {
+    try {
+      const { numero } = req.params;
+      const ferrageamentos = await Solipede.listarFerrageamentosExcluidos(numero);
+      res.status(200).json(ferrageamentos);
+    } catch (err) {
+      console.error("Erro ao buscar ferrageamentos arquivados:", err);
+      res.status(500).json({ error: "Erro ao buscar ferrageamentos arquivados" });
+    }
+  }
+
   // ===== Histórico de Movimentação =====
   static async historicoMovimentacao(req, res) {
     try {

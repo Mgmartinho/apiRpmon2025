@@ -9,11 +9,11 @@ class Solipede {
     LISTAGEM COM FILTRO OPCIONAL
  ====================================================== */
   static async listar(filtros = {}) {
-    let sql = "SELECT * FROM solipede";
+    let sql = "SELECT * FROM solipede WHERE 1=1"; // Remover filtro de status já que deletamos fisicamente
     const params = [];
 
     if (filtros.alocacao) {
-      sql += " WHERE alocacao = ?";
+      sql += " AND alocacao = ?";
       params.push(filtros.alocacao);
     }
 
@@ -709,13 +709,14 @@ class Solipede {
   }
 
   /* ======================================================
-     EXCLUSÃO (SOFT DELETE) - MOVE PARA HISTÓRICO
+     EXCLUSÃO - ARQUIVA DADOS E REMOVE DA TABELA PRINCIPAL
   ====================================================== */
   static async excluirSolipede(numero, motivoExclusao, usuarioId, senha) {
     const connection = await pool.getConnection();
     
     try {
       await connection.beginTransaction();
+      console.log(`🗑️ Iniciando exclusão do solípede ${numero}...`);
 
       // 1. Buscar dados do solípede
       const [solipedes] = await connection.query(
@@ -728,32 +729,43 @@ class Solipede {
       }
 
       const solipede = solipedes[0];
+      console.log(`✅ Solípede encontrado: ${solipede.nome}`);
 
       // 2. Validar senha do usuário
+      console.log(`🔍 Buscando usuário com ID: ${usuarioId}`);
       const [usuarios] = await connection.query(
-        "SELECT senha FROM usuarios WHERE id = ?",
+        "SELECT id, senha, nome FROM usuarios WHERE id = ?",
         [usuarioId]
       );
+
+      console.log(`📊 Usuários encontrados: ${usuarios.length}`);
+      if (usuarios.length > 0) {
+        console.log(`👤 Usuário: ${usuarios[0].nome} (ID: ${usuarios[0].id})`);
+      }
 
       if (!usuarios || usuarios.length === 0) {
         throw new Error("Usuário não encontrado");
       }
 
+      console.log(`🔐 Validando senha...`);
       const senhaValida = await bcrypt.compare(senha, usuarios[0].senha);
+      console.log(`🔑 Senha válida: ${senhaValida}`);
+      
       if (!senhaValida) {
         throw new Error("Senha incorreta");
       }
+      console.log(`✅ Senha validada para usuário ${usuarioId}`);
 
-      // 3. Inserir na tabela de excluídos
-      const insertSql = `
+      // 3. Copiar solípede para tabela de excluídos
+      const insertSolipedeSql = `
         INSERT INTO solipedes_excluidos (
           numero, nome, sexo, pelagem, raca, DataNascimento,
           origem, status, esquadrao, movimentacao, alocacao,
-          motivo_exclusao, usuario_exclusao_id
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+          motivo_exclusao, usuario_exclusao_id, data_exclusao
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NOW())
       `;
 
-      await connection.query(insertSql, [
+      const [resultSolipede] = await connection.query(insertSolipedeSql, [
         solipede.numero,
         solipede.nome,
         solipede.sexo,
@@ -769,11 +781,201 @@ class Solipede {
         usuarioId,
       ]);
 
-      // 4. Deletar da tabela principal (CASCADE deleta prontuário e histórico)
+      const solipedeExcluidoId = resultSolipede.insertId;
+      console.log(`✅ Solípede copiado para solipedes_excluidos (ID: ${solipedeExcluidoId})`);
+
+      // 4. Copiar todos os prontuários para prontuario_excluido
+      const [prontuarios] = await connection.query(
+        "SELECT * FROM prontuario WHERE numero_solipede = ?",
+        [numero]
+      );
+
+      if (prontuarios.length > 0) {
+        console.log(`📋 Copiando ${prontuarios.length} prontuários...`);
+        
+        for (const pront of prontuarios) {
+          const insertProntuarioSql = `
+            INSERT INTO prontuario_excluido (
+              numero_solipede, tipo, observacao, recomendacoes, data_criacao,
+              data_atualizacao, usuarioId, status_baixa, data_liberacao,
+              usuario_liberacao_id, tipo_baixa, data_lancamento, data_validade,
+              status_conclusao, data_conclusao, usuario_conclusao_id,
+              status_anterior, status_novo, usuario_atualizacao_id,
+              foi_responsavel_pela_baixa, precisa_baixar, alocacao_anterior,
+              alocacao_nova, origem, destino, solipede_excluido_id, data_arquivamento
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NOW())
+          `;
+
+          await connection.query(insertProntuarioSql, [
+            pront.numero_solipede,
+            pront.tipo,
+            pront.observacao,
+            pront.recomendacoes,
+            pront.data_criacao,
+            pront.data_atualizacao,
+            pront.usuarioId,
+            pront.status_baixa,
+            pront.data_liberacao,
+            pront.usuario_liberacao_id,
+            pront.tipo_baixa,
+            pront.data_lancamento,
+            pront.data_validade,
+            pront.status_conclusao,
+            pront.data_conclusao,
+            pront.usuario_conclusao_id,
+            pront.status_anterior,
+            pront.status_novo,
+            pront.usuario_atualizacao_id,
+            pront.foi_responsavel_pela_baixa,
+            pront.precisa_baixar,
+            pront.alocacao_anterior,
+            pront.alocacao_nova,
+            pront.origem,
+            pront.destino,
+            solipedeExcluidoId
+          ]);
+        }
+        console.log(`✅ ${prontuarios.length} prontuários copiados para prontuario_excluido`);
+      } else {
+        console.log(`ℹ️  Nenhum prontuário encontrado para este solípede`);
+      }
+
+      // 5. Copiar ferrageamentos para ferrageamentos_excluidos
+      const [ferrageamentos] = await connection.query(
+        "SELECT * FROM ferrageamentos WHERE solipede_numero = ?",
+        [numero]
+      );
+
+      if (ferrageamentos.length > 0) {
+        console.log(`🔧 Copiando ${ferrageamentos.length} ferrageamentos...`);
+        
+        for (const ferr of ferrageamentos) {
+          const insertFerrSql = `
+            INSERT INTO ferrageamentos_excluidos (
+              solipede_numero, data_ferrageamento, prazo_validade,
+              tamanho_ferradura, proximo_ferrageamento, responsavel,
+              observacoes, created_at, updated_at, solipede_excluido_id, data_arquivamento
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NOW())
+          `;
+
+          await connection.query(insertFerrSql, [
+            ferr.solipede_numero,
+            ferr.data_ferrageamento,
+            ferr.prazo_validade,
+            ferr.tamanho_ferradura,
+            ferr.proximo_ferrageamento,
+            ferr.responsavel,
+            ferr.observacoes,
+            ferr.created_at,
+            ferr.updated_at,
+            solipedeExcluidoId
+          ]);
+        }
+        console.log(`✅ ${ferrageamentos.length} ferrageamentos copiados`);
+      }
+
+      // 6. Copiar histórico de horas para historicohoras_excluidos
+      const [historicoHoras] = await connection.query(
+        "SELECT * FROM historicohoras WHERE solipedeNumero = ?",
+        [numero]
+      );
+
+      if (historicoHoras.length > 0) {
+        console.log(`⏱️ Copiando ${historicoHoras.length} registros de histórico de horas...`);
+        
+        for (const hora of historicoHoras) {
+          const insertHoraSql = `
+            INSERT INTO historicohoras_excluidos (
+              solipedeNumero, horas, dataLancamento, mesReferencia,
+              mes, ano, usuarioId, solipede_excluido_id, data_arquivamento
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, NOW())
+          `;
+
+          await connection.query(insertHoraSql, [
+            hora.solipedeNumero,
+            hora.horas,
+            hora.dataLancamento,
+            hora.mesReferencia,
+            hora.mes,
+            hora.ano,
+            hora.usuarioId,
+            solipedeExcluidoId
+          ]);
+        }
+        console.log(`✅ ${historicoHoras.length} registros de horas copiados`);
+      }
+
+      // 7. Copiar histórico de movimentação para historico_movimentacao_excluidos
+      const [historicoMov] = await connection.query(
+        "SELECT * FROM historico_movimentacao WHERE numero = ?",
+        [numero]
+      );
+
+      if (historicoMov.length > 0) {
+        console.log(`🚚 Copiando ${historicoMov.length} movimentações...`);
+        
+        for (const mov of historicoMov) {
+          const insertMovSql = `
+            INSERT INTO historico_movimentacao_excluidos (
+              numero, dataMovimentacao, esquadraoOrigem, esquadraoDestino,
+              usuarioId, solipede_excluido_id, data_arquivamento
+            ) VALUES (?, ?, ?, ?, ?, ?, NOW())
+          `;
+
+          await connection.query(insertMovSql, [
+            mov.numero,
+            mov.dataMovimentacao,
+            mov.esquadraoOrigem,
+            mov.esquadraoDestino,
+            mov.usuarioId,
+            solipedeExcluidoId
+          ]);
+        }
+        console.log(`✅ ${historicoMov.length} movimentações copiadas`);
+      }
+
+      // 8. Deletar prontuários da tabela original
+      if (prontuarios.length > 0) {
+        await connection.query("DELETE FROM prontuario WHERE numero_solipede = ?", [numero]);
+        console.log(`🗑️ ${prontuarios.length} prontuários deletados da tabela original`);
+      }
+
+      // 9. Deletar ferrageamentos da tabela original
+      if (ferrageamentos.length > 0) {
+        await connection.query("DELETE FROM ferrageamentos WHERE solipede_numero = ?", [numero]);
+        console.log(`🗑️ ${ferrageamentos.length} ferrageamentos deletados da tabela original`);
+      }
+
+      // 10. Deletar histórico de horas da tabela original
+      if (historicoHoras.length > 0) {
+        await connection.query("DELETE FROM historicohoras WHERE solipedeNumero = ?", [numero]);
+        console.log(`🗑️ ${historicoHoras.length} registros de horas deletados da tabela original`);
+      }
+
+      // 11. Deletar histórico de movimentação da tabela original
+      if (historicoMov.length > 0) {
+        await connection.query("DELETE FROM historico_movimentacao WHERE numero = ?", [numero]);
+        console.log(`🗑️ ${historicoMov.length} movimentações deletadas da tabela original`);
+      }
+
+      // 12. Deletar solípede da tabela original
       await connection.query("DELETE FROM solipede WHERE numero = ?", [numero]);
+      console.log(`🗑️ Solípede ${numero} deletado da tabela principal`);
 
       await connection.commit();
-      return { success: true, message: "Solípede excluído com sucesso" };
+      console.log(`✅ Exclusão concluída com sucesso!`);
+      
+      return { 
+        success: true, 
+        message: "Solípede excluído com sucesso",
+        arquivados: {
+          solipede: 1,
+          prontuarios: prontuarios.length,
+          ferrageamentos: ferrageamentos.length,
+          historicoHoras: historicoHoras.length,
+          movimentacoes: historicoMov.length
+        }
+      };
     } catch (error) {
       await connection.rollback();
       throw error;
@@ -783,6 +985,7 @@ class Solipede {
   }
 
   static async listarExcluidos() {
+    // Buscar da tabela solipedes_excluidos (arquivamento)
     const sql = `
       SELECT 
         se.*,
@@ -793,7 +996,18 @@ class Solipede {
       ORDER BY se.data_exclusao DESC
     `;
 
+    console.log("🔍 Executando query listarExcluidos...");
     const [rows] = await pool.query(sql);
+    console.log(`📊 Total de excluídos encontrados: ${rows.length}`);
+    
+    if (rows.length > 0) {
+      console.log("Primeiro excluído:", {
+        numero: rows[0].numero,
+        nome: rows[0].nome,
+        status: rows[0].status,
+        data_exclusao: rows[0].data_exclusao
+      });
+    }
     
     return rows.map((s) => ({
       ...s,
@@ -801,6 +1015,47 @@ class Solipede {
         ? s.DataNascimento.toISOString().split("T")[0]
         : null,
     }));
+  }
+
+  // Buscar prontuários arquivados de um solípede excluído
+  static async listarProntuarioExcluido(numero) {
+    const sql = `
+      SELECT 
+        p.*,
+        u1.nome AS usuario_nome,
+        u1.email AS usuario_email,
+        u2.nome AS usuario_liberacao_nome,
+        u3.nome AS usuario_conclusao_nome,
+        u4.nome AS usuario_atualizacao_nome
+      FROM prontuario_excluido p
+      LEFT JOIN usuarios u1 ON p.usuarioId = u1.id
+      LEFT JOIN usuarios u2 ON p.usuario_liberacao_id = u2.id
+      LEFT JOIN usuarios u3 ON p.usuario_conclusao_id = u3.id
+      LEFT JOIN usuarios u4 ON p.usuario_atualizacao_id = u4.id
+      WHERE p.numero_solipede = ?
+      ORDER BY p.data_criacao DESC
+    `;
+
+    console.log(`📋 Buscando prontuários arquivados do solípede ${numero}...`);
+    const [rows] = await pool.query(sql, [numero]);
+    console.log(`✅ ${rows.length} prontuários arquivados encontrados`);
+    
+    return rows;
+  }
+
+  // Buscar ferrageamentos arquivados de um solípede excluído
+  static async listarFerrageamentosExcluidos(numero) {
+    const sql = `
+      SELECT * FROM ferrageamentos_excluidos
+      WHERE solipede_numero = ?
+      ORDER BY data_ferrageamento DESC
+    `;
+
+    console.log(`🔧 Buscando ferrageamentos arquivados do solípede ${numero}...`);
+    const [rows] = await pool.query(sql, [numero]);
+    console.log(`✅ ${rows.length} ferrageamentos arquivados encontrados`);
+    
+    return rows;
   }
 
   static async atualizarStatus(numero, novoStatus, usuarioId) {

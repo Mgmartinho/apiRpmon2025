@@ -38,6 +38,13 @@ router.patch("/:id/concluir-registro", (req, res, next) => {
   ProntuarioController.concluirRegistro(req, res, next);
 });
 
+// Rota DELETE para excluir registro com senha
+router.delete("/:id/excluir", (req, res, next) => {
+  console.log(`🗑️ ROTA DELETE /:id/excluir CAPTURADA com ID: ${req.params.id}`);
+  console.log("📦 Body recebido:", req.body);
+  ProntuarioController.excluirRegistro(req, res, next);
+});
+
 // Rota POST para criar prontuário
 router.post("/", (req, res, next) => {
   console.log("➕ ROTA POST / prontuário CAPTURADA");

@@ -134,7 +134,14 @@ class UsuarioController {
       const { id } = req.params;
       const { perfil } = req.body;
 
+      console.log("\n🔄 === ATUALIZAR PERFIL ===");
+      console.log("   - Usuario ID:", id);
+      console.log("   - Perfil recebido:", perfil);
+      console.log("   - Tipo:", typeof perfil);
+      console.log("   - Length:", perfil?.length);
+
       if (!perfil) {
+        console.log("❌ Perfil não fornecido");
         return res.status(400).json({ error: "Perfil é obrigatório" });
       }
 
@@ -144,18 +151,30 @@ class UsuarioController {
         "Veterinario",
         "Ferrador",
         "Pagador de cavalo",
+        "Lancador de Carga Horaria",
+        "Observacao Comportamental",
         "Consulta"
       ];
 
+      console.log("   - Perfis válidos:", perfisValidos);
+      console.log("   - Perfil está na lista?", perfisValidos.includes(perfil));
+
       if (!perfisValidos.includes(perfil)) {
-        return res.status(400).json({ error: "Perfil inválido" });
+        console.log("❌ Perfil inválido:", perfil);
+        console.log("   - Comparações:");
+        perfisValidos.forEach(p => {
+          console.log(`     "${p}" === "${perfil}": ${p === perfil}`);
+        });
+        return res.status(400).json({ error: `Perfil inválido: "${perfil}"` });
       }
 
+      console.log("✅ Perfil válido, atualizando no banco...");
       await Usuario.atualizarPerfil(id, perfil);
 
+      console.log("✅ Perfil atualizado com sucesso!");
       res.json({ message: "Perfil atualizado com sucesso" });
     } catch (err) {
-      console.error("Erro ao atualizar perfil:", err);
+      console.error("❌ Erro ao atualizar perfil:", err);
       res.status(500).json({ error: "Erro ao atualizar perfil" });
     }
   }
