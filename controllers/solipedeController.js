@@ -169,9 +169,9 @@ static async listar(req, res, next) {
   }
 static async adicionarHoras(req, res) {
   try {
-    const { numero, horas, senha, usuarioId } = req.body;
+    const { numero, horas, senha, usuarioId, dataLancamento } = req.body;
 
-    console.log("🔥 RECEBIDO adicionarHoras:", { numero, horas, senha, usuarioId });
+    console.log("🔥 RECEBIDO adicionarHoras:", { numero, horas, senha, usuarioId, dataLancamento });
     console.log("Tipo usuarioId:", typeof usuarioId, "Valor:", usuarioId);
     console.log("Usuario do token:", req.usuario);
 
@@ -206,12 +206,13 @@ static async adicionarHoras(req, res) {
     );
     console.log("Senha validada com sucesso");
 
-    // 2️⃣ lançar horas COM ID DO BODY
-    console.log("Lançando horas com usuarioId:", usuarioId);
+    // 2️⃣ lançar horas COM ID DO BODY e data opcional
+    console.log("Lançando horas com usuarioId:", usuarioId, "dataLancamento:", dataLancamento || "(NOW)");
     const totalHoras = await Solipede.adicionarHoras(
       numero,
       Number(horas),
-      usuarioId
+      usuarioId,
+      dataLancamento // pode ser undefined
     );
 
     console.log("Horas lançadas, total:", totalHoras);

@@ -11,5 +11,6 @@ router.get("/ferrageamentos/historico/:numero", FerrageamentoController.historic
 router.get("/ferrageamentos/ultimo/:numero", FerrageamentoController.ultimo);
 router.put("/ferrageamentos/:id", FerrageamentoController.atualizar);
 router.delete("/ferrageamentos/:id", FerrageamentoController.deletar);
+router.delete("/ferrageamentos/:id/excluir", FerrageamentoController.excluirComSenha);
 
 export default router;

@@ -113,7 +113,7 @@ class Solipede {
     )}`;
   }
 
-  static async adicionarHoras(numero, horas, usuarioId) {
+  static async adicionarHoras(numero, horas, usuarioId, dataLancamentoInput) {
     // validação defensiva
     if (!numero || !horas) {
       throw new Error("Número e horas são obrigatórios");
@@ -123,22 +123,45 @@ class Solipede {
       console.warn("⚠️ Lançamento sem usuário identificado");
     }
 
-    const hoje = new Date();
-    const mesAtual = hoje.getMonth() + 1;
-    const anoAtual = hoje.getFullYear();
+    // determinar data de lançamento: usar fornecida (YYYY-MM-DD) ou NOW()
+    let dataRef;
+    if (dataLancamentoInput && typeof dataLancamentoInput === "string") {
+      // garantir horário padronizado para evitar timezone
+      const parsed = new Date(`${dataLancamentoInput}T00:00:00`);
+      if (!isNaN(parsed.getTime())) {
+        dataRef = parsed;
+      } else {
+        console.warn("⚠️ dataLancamento inválida, usando NOW():", dataLancamentoInput);
+        dataRef = new Date();
+      }
+    } else {
+      dataRef = new Date();
+    }
+
+    const mesAtual = dataRef.getMonth() + 1;
+    const anoAtual = dataRef.getFullYear();
     const mesReferencia = `${anoAtual}-${String(mesAtual).padStart(2, "0")}`;
 
     // 1️⃣ inserir no histórico com usuarioId
     console.log("Inserindo histórico:", { numero, horas, usuarioId, tipo: typeof usuarioId });
     const usuarioIdNumerico = Number(usuarioId) || null;
     console.log("usuarioIdNumerico:", usuarioIdNumerico, "tipo:", typeof usuarioIdNumerico);
-    const params = [numero, Number(horas), mesReferencia, mesAtual, anoAtual, usuarioIdNumerico];
+    // formatar data para MySQL DATETIME 'YYYY-MM-DD HH:MM:SS'
+    const ano = dataRef.getFullYear();
+    const mes = String(dataRef.getMonth() + 1).padStart(2, "0");
+    const dia = String(dataRef.getDate()).padStart(2, "0");
+    const hh = "00";
+    const mm = "00";
+    const ss = "00";
+    const dataLancamentoMySQL = `${ano}-${mes}-${dia} ${hh}:${mm}:${ss}`;
+
+    const params = [numero, Number(horas), dataLancamentoMySQL, mesReferencia, mesAtual, anoAtual, usuarioIdNumerico];
     console.log("Parametros do insert:", params);
     try {
       const result = await pool.query(
         `INSERT INTO historicoHoras 
    (solipedeNumero, horas, dataLancamento, mesReferencia, mes, ano, usuarioId)
-   VALUES (?, ?, NOW(), ?, ?, ?, ?)`,
+   VALUES (?, ?, ?, ?, ?, ?, ?)`,
         params
       );
       console.log("Insert result:", result);

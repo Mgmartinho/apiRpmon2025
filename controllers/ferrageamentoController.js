@@ -1,4 +1,5 @@
 import Ferrageamento from "../models/Ferrageamento.js";
+import bcrypt from "bcryptjs";
 
 class FerrageamentoController {
   // Criar novo ferrageamento
@@ -209,6 +210,58 @@ class FerrageamentoController {
         error: "Erro ao atualizar ferrageamento",
         details: error.message
       });
+    }
+  }
+
+  // Deletar ferrageamento com confirmação de senha
+  static async excluirComSenha(req, res) {
+    try {
+      const { id } = req.params;
+      const { senha } = req.body;
+
+      const usuarioLogado = req.usuario;
+
+      if (!id) {
+        return res.status(400).json({ error: "ID do ferrageamento é obrigatório" });
+      }
+
+      if (!senha) {
+        return res.status(400).json({ error: "Senha é obrigatória" });
+      }
+
+      if (!usuarioLogado || !usuarioLogado.id) {
+        return res.status(401).json({ error: "Usuário não autenticado" });
+      }
+
+      // Buscar senha do usuário logado
+      const pool = (await import("../config/mysqlConnect.js")).default;
+      const [usuarios] = await pool.query(
+        "SELECT id, nome, senha FROM usuarios WHERE id = ?",
+        [usuarioLogado.id]
+      );
+
+      if (!usuarios || usuarios.length === 0) {
+        return res.status(401).json({ error: "Usuário não encontrado" });
+      }
+
+      const usuario = usuarios[0];
+      const senhaValida = await bcrypt.compare(senha, usuario.senha);
+
+      if (!senhaValida) {
+        return res.status(401).json({ error: "Senha inválida" });
+      }
+
+      // Executar exclusão
+      const resultado = await Ferrageamento.deletar(id);
+
+      if (resultado.affectedRows === 0) {
+        return res.status(404).json({ error: "Ferrageamento não encontrado" });
+      }
+
+      res.status(200).json({ message: "Ferrageamento deletado com sucesso" });
+    } catch (error) {
+      console.error("Erro ao excluir ferrageamento com senha:", error);
+      res.status(500).json({ error: "Erro ao excluir ferrageamento", details: error.message });
     }
   }
 }
