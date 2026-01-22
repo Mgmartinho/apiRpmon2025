@@ -502,10 +502,10 @@ class Solipede {
   static async salvarProntuario(dados) {
     const sql = `
       INSERT INTO prontuario (
-        numero_solipede, tipo, observacao, recomendacoes, usuarioId, 
-        data_criacao, status_baixa, tipo_baixa, data_lancamento, data_validade, foi_responsavel_pela_baixa, precisa_baixar
+        numero_solipede, tipo, observacao, recomendacoes, usuarioId,
+        data_criacao, status_baixa, tipo_baixa, data_lancamento, data_validade, foi_responsavel_pela_baixa, precisa_baixar, origem, destino
       )
-      VALUES (?, ?, ?, ?, ?, NOW(), ?, ?, ?, ?, ?, ?)
+      VALUES (?, ?, ?, ?, ?, NOW(), ?, ?, ?, ?, ?, ?, ?, ?)
     `;
 
     console.log("💾 Model salvarProntuario - dados recebidos:", dados);
@@ -521,7 +521,9 @@ class Solipede {
       dados.data_lancamento || null,
       dados.data_validade || null,
       dados.foi_responsavel_pela_baixa || 0,
-      dados.precisa_baixar || null
+      dados.precisa_baixar || null,
+      dados.origem || null,
+      dados.destino || null
     ]);
 
     console.log("💾 INSERT executado, insertId:", resultado.insertId);
@@ -549,6 +551,8 @@ class Solipede {
         p.usuario_conclusao_id,
         p.foi_responsavel_pela_baixa,
         p.precisa_baixar,
+          p.origem,
+          p.destino,
         p.usuarioId,
         u.id as usuario_id_check,
         u.nome as usuario_nome,

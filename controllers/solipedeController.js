@@ -367,11 +367,11 @@ static async adicionarHoras(req, res) {
   // ===== Prontuário =====
   static async salvarProntuario(req, res) {
     try {
-      let { numero_solipede, tipo, observacao, recomendacoes, tipo_baixa, data_lancamento, data_validade, precisa_baixar, senha } = req.body;
+      let { numero_solipede, tipo, observacao, recomendacoes, tipo_baixa, data_lancamento, data_validade, precisa_baixar, senha, origem, destino } = req.body;
       const usuarioId = req.usuario?.id;
 
       console.log("\n📝 CONTROLLER: salvarProntuario");
-      console.log("   Dados do body:", { numero_solipede, tipo, observacao: observacao?.substring(0, 30) + "...", tipo_baixa, data_validade, precisa_baixar, senha: senha ? "****" : "não fornecida" });
+      console.log("   Dados do body:", { numero_solipede, tipo, observacao: observacao?.substring(0, 30) + "...", tipo_baixa, data_validade, precisa_baixar, origem, destino, senha: senha ? "****" : "não fornecida" });
       console.log("   req.usuario completo:", req.usuario);
       console.log("   usuarioId extraído:", usuarioId, "Tipo:", typeof usuarioId);
 
@@ -437,7 +437,9 @@ static async adicionarHoras(req, res) {
         data_validade: data_validade || null,
         foi_responsavel_pela_baixa: foiResponsavelPelaBaixa,
         precisa_baixar: tipo === "Tratamento" ? precisa_baixar : null, // Salvar valor original
-        status_baixa: tipo === "Baixa" ? "pendente" : null
+        status_baixa: tipo === "Baixa" ? "pendente" : null,
+        origem: origem || null,
+        destino: destino || null
       });
 
       // Se for tipo "Baixa", atualizar status do solípede
