@@ -5,6 +5,7 @@
   "main": "server.js",
   "scripts": {
     "start": "node server.js",
+    "start:prod": "node --env-file=.env.production server.js",
     "dev": "nodemon server.js",
     "test:performance": "node performance-test.js",
     "test:load": "node load-test.js",

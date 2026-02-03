@@ -12,13 +12,17 @@ const config = {
   waitForConnections: true,
   connectionLimit: 10,
   queueLimit: 0,
+  connectTimeout: 20000, // 20 segundos para conectar
+  enableKeepAlive: true,
+  keepAliveInitialDelay: 0
 };
 
 console.log('🔌 Configurando MySQL:', {
   host: config.host,
   user: config.user,
   database: config.database,
-  port: config.port
+  port: config.port,
+  environment: process.env.NODE_ENV
 });
 
 const pool = mysql.createPool(config);
