@@ -13,6 +13,7 @@ class Prontuario {
         p.id,
         p.tipo,
         p.observacao,
+        p.diagnosticos,
         p.recomendacoes,
         p.usuarioId,
         p.data_criacao,
@@ -74,6 +75,7 @@ class Prontuario {
         p.id,
         p.tipo,
         p.observacao,
+        p.diagnosticos,
         p.recomendacoes,
         p.usuarioId,
         p.data_criacao,
@@ -216,6 +218,11 @@ class Prontuario {
     if (dados.observacao !== undefined) {
       campos.push('observacao = ?');
       valores.push(dados.observacao);
+    }
+
+    if (dados.diagnosticos !== undefined) {
+      campos.push('diagnosticos = ?');
+      valores.push(dados.diagnosticos);
     }
 
     if (dados.recomendacoes !== undefined) {

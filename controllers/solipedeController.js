@@ -295,13 +295,14 @@ static async adicionarHoras(req, res) {
       console.log("\n🎯 === CONTROLLER movimentacaoEmLote CHAMADO ===");
       console.log("📦 req.body completo:", req.body);
       
-      const { numeros, novaAlocacao, observacao, senha } = req.body;
+      const { numeros, novaAlocacao, dataMovimentacao, observacao, senha } = req.body;
       const usuario = req.usuario;
 
       console.log("📥 Dados extraídos do body:");
       console.log("   - numeros:", numeros);
       console.log("   - novaAlocacao:", novaAlocacao);
       console.log("   - tipo novaAlocacao:", typeof novaAlocacao);
+      console.log("   - dataMovimentacao:", dataMovimentacao);
       console.log("   - observacao:", observacao);
       console.log("   - senha:", senha ? "****" : "não informada");
       console.log("   - usuario:", usuario);
@@ -338,6 +339,7 @@ static async adicionarHoras(req, res) {
       console.log("   - numeros:", numeros);
       console.log("   - dadosAnteriores size:", dadosAnteriores.size);
       console.log("   - novaAlocacao:", novaAlocacao);
+      console.log("   - dataMovimentacao:", dataMovimentacao);
       console.log("   - observacao:", observacao);
       console.log("   - usuario.id:", usuario.id);
       
@@ -345,6 +347,7 @@ static async adicionarHoras(req, res) {
         numeros,
         dadosAnteriores,
         novaAlocacao,
+        dataMovimentacao,
         observacao,
         usuario.id
       );
@@ -367,11 +370,11 @@ static async adicionarHoras(req, res) {
   // ===== Prontuário =====
   static async salvarProntuario(req, res) {
     try {
-      let { numero_solipede, tipo, observacao, recomendacoes, tipo_baixa, data_lancamento, data_validade, precisa_baixar, senha, origem, destino } = req.body;
+      let { numero_solipede, tipo, observacao, diagnosticos, recomendacoes, tipo_baixa, data_lancamento, data_validade, precisa_baixar, senha, origem, destino } = req.body;
       const usuarioId = req.usuario?.id;
 
       console.log("\n📝 CONTROLLER: salvarProntuario");
-      console.log("   Dados do body:", { numero_solipede, tipo, observacao: observacao?.substring(0, 30) + "...", tipo_baixa, data_validade, precisa_baixar, origem, destino, senha: senha ? "****" : "não fornecida" });
+      console.log("   Dados do body:", { numero_solipede, tipo, observacao: observacao?.substring(0, 30) + "...", diagnosticos: diagnosticos?.substring(0, 30) + "...", tipo_baixa, data_validade, precisa_baixar, origem, destino, senha: senha ? "****" : "não fornecida" });
       console.log("   req.usuario completo:", req.usuario);
       console.log("   usuarioId extraído:", usuarioId, "Tipo:", typeof usuarioId);
 
@@ -430,6 +433,7 @@ static async adicionarHoras(req, res) {
         numero_solipede,
         tipo: tipo || "Observação Geral",
         observacao,
+        diagnosticos: diagnosticos || null,
         recomendacoes: recomendacoes || null,
         usuario_id: usuarioId || null,
         tipo_baixa: tipo_baixa || null,
@@ -564,7 +568,7 @@ static async adicionarHoras(req, res) {
   static async atualizarProntuario(req, res) {
     try {
       const { id } = req.params;
-      const { observacao, recomendacoes, data_validade } = req.body;
+      const { observacao, diagnosticos, recomendacoes, data_validade } = req.body;
       const usuarioId = req.usuario?.id;
 
       console.log("═".repeat(60));
@@ -584,7 +588,7 @@ static async adicionarHoras(req, res) {
 
       // Usar função de auditoria do modelo Prontuario
       const Prontuario = (await import("../models/Prontuario.js")).default;
-      await Prontuario.atualizarComAuditoria(id, { observacao, recomendacoes, data_validade }, usuarioId);
+      await Prontuario.atualizarComAuditoria(id, { observacao, diagnosticos, recomendacoes, data_validade }, usuarioId);
       
       res.status(200).json({ success: true, message: "Prontuário atualizado com sucesso" });
     } catch (err) {

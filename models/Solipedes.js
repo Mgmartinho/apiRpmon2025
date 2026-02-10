@@ -438,14 +438,24 @@ class Solipede {
     return dadosAnteriores; // mapa numero -> {alocacao_anterior}
   }
 
-  static async registrarMovimentacoesProntuario(numeros, dadosAnteriores, novaAlocacao, observacaoCustom, usuarioId) {
+  static async registrarMovimentacoesProntuario(numeros, dadosAnteriores, novaAlocacao, dataMovimentacao, observacaoCustom, usuarioId) {
     console.log("📝 === registrarMovimentacoesProntuario ===");
     console.log("   - numeros:", numeros);
     console.log("   - dadosAnteriores size:", dadosAnteriores.size);
     console.log("   - dadosAnteriores:", Array.from(dadosAnteriores.entries()));
     console.log("   - novaAlocacao:", novaAlocacao);
+    console.log("   - dataMovimentacao (recebida):", dataMovimentacao);
+    console.log("   - tipo dataMovimentacao:", typeof dataMovimentacao);
     console.log("   - observacaoCustom:", observacaoCustom);
     console.log("   - usuarioId:", usuarioId);
+    
+    // Formatar a data para MySQL (YYYY-MM-DD HH:MM:SS)
+    // Se vier apenas YYYY-MM-DD, adiciona 00:00:00
+    let dataFormatada = dataMovimentacao;
+    if (dataMovimentacao && dataMovimentacao.length === 10) {
+      dataFormatada = `${dataMovimentacao} 00:00:00`;
+      console.log("   - dataFormatada para MySQL:", dataFormatada);
+    }
     
     for (const numero of numeros) {
       const dados = dadosAnteriores.get(numero);
@@ -474,17 +484,20 @@ class Solipede {
         console.log(`   🔄 Executando INSERT no prontuário...`);
         const [result] = await pool.query(
           `INSERT INTO prontuario (numero_solipede, tipo, observacao, usuarioId, data_criacao, alocacao_anterior, alocacao_nova, origem, destino)
-           VALUES (?, 'Movimentação', ?, ?, NOW(), ?, ?, ?, ?)`,
-          [numero, observacaoCompleta, usuarioId, alocacaoAnterior, alocacaoNova, alocacaoAnterior, alocacaoNova]
+           VALUES (?, 'Movimentação', ?, ?, ?, ?, ?, ?, ?)`,
+          [numero, observacaoCompleta, usuarioId, dataFormatada, alocacaoAnterior, alocacaoNova, alocacaoAnterior, alocacaoNova]
         );
         console.log(`   ✅ Prontuário inserido! insertId: ${result.insertId}, affectedRows: ${result.affectedRows}`);
+        console.log(`   📅 Data usada (formatada): ${dataFormatada}`);
         
         // Verifica se realmente foi inserido
         const [verificacao] = await pool.query(
-          `SELECT * FROM prontuario WHERE id = ?`,
+          `SELECT id, numero_solipede, tipo, data_criacao, DATE_FORMAT(data_criacao, '%Y-%m-%d %H:%i:%s') as data_formatada FROM prontuario WHERE id = ?`,
           [result.insertId]
         );
         console.log(`   🔍 Verificação do registro inserido:`, verificacao[0]);
+        console.log(`   🔍 data_criacao salvo no banco: ${verificacao[0]?.data_criacao}`);
+        console.log(`   🔍 data_criacao formatado: ${verificacao[0]?.data_formatada}`);
         
       } catch (e) {
         console.error(`   ❌ Erro ao registrar movimentação no prontuário (${numero}):`, e);
@@ -502,10 +515,10 @@ class Solipede {
   static async salvarProntuario(dados) {
     const sql = `
       INSERT INTO prontuario (
-        numero_solipede, tipo, observacao, recomendacoes, usuarioId,
+        numero_solipede, tipo, observacao, diagnosticos, recomendacoes, usuarioId,
         data_criacao, status_baixa, tipo_baixa, data_lancamento, data_validade, foi_responsavel_pela_baixa, precisa_baixar, origem, destino
       )
-      VALUES (?, ?, ?, ?, ?, NOW(), ?, ?, ?, ?, ?, ?, ?, ?)
+      VALUES (?, ?, ?, ?, ?, ?, NOW(), ?, ?, ?, ?, ?, ?, ?, ?)
     `;
 
     console.log("💾 Model salvarProntuario - dados recebidos:", dados);
@@ -514,6 +527,7 @@ class Solipede {
       dados.numero_solipede,
       dados.tipo,
       dados.observacao,
+      dados.diagnosticos || null,
       dados.recomendacoes,
       dados.usuario_id || null,
       dados.status_baixa || null,
@@ -536,7 +550,8 @@ class Solipede {
         p.id, 
         p.numero_solipede, 
         p.tipo, 
-        p.observacao, 
+        p.observacao,
+        p.diagnosticos,
         p.recomendacoes, 
         p.data_criacao,
         p.data_atualizacao,
