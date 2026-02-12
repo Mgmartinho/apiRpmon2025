@@ -28,7 +28,7 @@ class Usuario {
     return pool.query(
       `INSERT INTO usuarios (nome, re, email, senha, perfil)
        VALUES (?, ?, ?, ?, ?)`,
-      [nome, re ,email, senha, perfil || "OPERADOR"]
+      [nome, re ,email, senha, perfil || "Pendente de Aprovacao"]
     );
   }
 

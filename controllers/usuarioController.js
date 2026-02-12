@@ -50,8 +50,8 @@ class UsuarioController {
       const { nome, registro, email, senha, perfil } = req.body;
 
       // Validações
-      if (!nome || !registro || !email || !senha || !perfil) {
-        return res.status(400).json({ error: "Todos os campos são obrigatórios" });
+      if (!nome || !registro || !email || !senha) {
+        return res.status(400).json({ error: "Nome, registro, email e senha são obrigatórios" });
       }
 
       // Verifica se email já existe
@@ -63,16 +63,22 @@ class UsuarioController {
       // Hash da senha
       const senhaHash = await bcrypt.hash(senha, 10);
 
+      // Define perfil padrão como "Pendente de Aprovacao" se não especificado
+      const perfilUsuario = perfil || "Pendente de Aprovacao";
+
       // Cria o usuário no banco
       await Usuario.criar({
         nome,
         re: registro,
         email,
         senha: senhaHash,
-        perfil,
+        perfil: perfilUsuario,
       });
 
-      res.status(201).json({ message: "Usuário criado com sucesso" });
+      res.status(201).json({ 
+        message: "Usuário criado com sucesso",
+        perfil: perfilUsuario
+      });
     } catch (err) {
       console.error("Erro ao criar usuário:", err);
       res.status(500).json({ error: "Erro ao criar usuário" });
@@ -149,6 +155,8 @@ class UsuarioController {
         "Desenvolvedor",
         "Veterinario Admin",
         "Veterinario",
+        "Enfermeiro Veterinario",
+        "Coordenador Operacional",
         "Ferrador",
         "Pagador de cavalo",
         "Lancador de Carga Horaria",

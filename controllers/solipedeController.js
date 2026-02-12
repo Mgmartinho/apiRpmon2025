@@ -613,10 +613,10 @@ static async adicionarHoras(req, res) {
   ====================================================== */
   static async excluirSolipede(req, res) {
     try {
-      const { numero, motivoExclusao, senha } = req.body;
+      const { numero, motivoExclusao, observacao, senha } = req.body;
       const usuario = req.usuario;
 
-      console.log("🗑️ Exclusão solicitada:", { numero, motivoExclusao, usuarioId: usuario?.id });
+      console.log("🗑️ Exclusão solicitada:", { numero, motivoExclusao, observacao, usuarioId: usuario?.id });
 
       if (!numero || !motivoExclusao || !senha) {
         return res.status(400).json({
@@ -631,6 +631,7 @@ static async adicionarHoras(req, res) {
       const resultado = await Solipede.excluirSolipede(
         numero,
         motivoExclusao,
+        observacao,
         usuario.id,
         senha
       );

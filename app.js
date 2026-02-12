@@ -29,6 +29,12 @@ console.log('✅ CORS configurado para aceitar todas as origens');
 console.log('📋 Origens permitidas configuradas:', allowedOrigins);
 
 app.use(express.json());
+
+// Health check endpoint para Docker/Kubernetes
+app.get('/healthz', (req, res) => {
+  res.status(200).json({ status: 'ok', timestamp: new Date().toISOString() });
+});
+
 routes(app);
 app.use(manipuladorDeErros);
 

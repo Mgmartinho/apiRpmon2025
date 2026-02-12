@@ -753,7 +753,7 @@ class Solipede {
   /* ======================================================
      EXCLUSÃO - ARQUIVA DADOS E REMOVE DA TABELA PRINCIPAL
   ====================================================== */
-  static async excluirSolipede(numero, motivoExclusao, usuarioId, senha) {
+  static async excluirSolipede(numero, motivoExclusao, observacao, usuarioId, senha) {
     const connection = await pool.getConnection();
     
     try {
@@ -803,8 +803,8 @@ class Solipede {
         INSERT INTO solipedes_excluidos (
           numero, nome, sexo, pelagem, raca, DataNascimento,
           origem, status, esquadrao, movimentacao, alocacao,
-          motivo_exclusao, usuario_exclusao_id, data_exclusao
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NOW())
+          motivo_exclusao, observacao, usuario_exclusao_id, data_exclusao
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NOW())
       `;
 
       const [resultSolipede] = await connection.query(insertSolipedeSql, [
@@ -820,6 +820,7 @@ class Solipede {
         solipede.movimentacao,
         solipede.alocacao,
         motivoExclusao,
+        observacao || null,
         usuarioId,
       ]);
 
