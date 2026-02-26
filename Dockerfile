@@ -1,13 +1,17 @@
-FROM node:18-alpine
+FROM node:22-alpine3.22
 
 WORKDIR /app
+
+RUN apk upgrade --no-cache
 
 # Copiar arquivos de dependências
 COPY package*.json ./
 
 # Instalar dependências
 RUN npm config set strict-ssl false \
-  && npm ci --only=production --silent
+  && npm ci --omit=dev --silent \
+  && rm -rf /usr/local/lib/node_modules/npm \
+  && rm -f /usr/local/bin/npm /usr/local/bin/npx
 
 # Copiar código fonte
 COPY . .

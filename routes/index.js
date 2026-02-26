@@ -3,6 +3,7 @@ import usuarioRoutes from "./usuarioRoutes.js";
 import solipedesRoutes from "./solipedesRoutes.js";
 import ferrageamentoRoutes from "./ferrageamentoRoutes.js";
 import prontuarioRoutes from "./prontuarioRoutes.js";
+import prontuarioComplementosRoutes from "./prontuarioComplementosRoutes.js";
 import restricaoRoutes from "./restricaoRoutes.js";
 import observacaoRoutes from "./observacaoRoutes.js";
 import historicoRoutes from "./historicoRoutes.js";
@@ -59,6 +60,7 @@ const routes = (app) => {
   
   app.use("/auth", usuarioRoutes);
   app.use("/gestaoFVR/prontuario", authMiddleware, prontuarioRoutes);  // ✅ Mais específica PRIMEIRO
+  app.use("/gestaoFVR/prontuario", authMiddleware, prontuarioComplementosRoutes);
   app.use("/gestaoFVR", authMiddleware, historicoRoutes);  // Rotas de histórico
   app.use("/gestaoFVR", authMiddleware, ferrageamentoRoutes);
   app.use("/gestaoFVR", authMiddleware, solipedesRoutes);

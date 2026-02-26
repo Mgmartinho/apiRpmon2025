@@ -53,8 +53,8 @@ class Solipede {
     const sql = `
       INSERT INTO solipede
       (numero, nome, DataNascimento, sexo, pelagem, movimentacao,
-       alocacao, restricoes, status, origem, esquadrao, cargaHoraria)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+       alocacao, restricoes, status, origem, esquadrao, baia, cargaHoraria)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     `;
 
     const values = [
@@ -69,6 +69,7 @@ class Solipede {
       data.status,
       data.origem,
       data.esquadrao,
+      data.baia || null,
       data.cargaHoraria || 0,
     ];
 

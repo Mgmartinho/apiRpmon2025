@@ -48,6 +48,33 @@ static async listar(req, res, next) {
     try {
       const { numero } = req.params;
       const { senha, usuarioId, esquadrao, esquadraoOrigem } = req.body;
+      const atualizandoBaia = Object.prototype.hasOwnProperty.call(req.body, "baia");
+
+      if (atualizandoBaia) {
+        const usuario = req.usuario;
+        const perfisAutorizadosBaia = [
+          "Pagador de cavalo",
+          "Pagador de cavalos",
+          "Veterinario",
+          "Veterinario Admin",
+          "Desenvolvedor",
+        ];
+
+        if (!usuario || !usuario.perfil) {
+          return res.status(401).json({ error: "Usuário não autenticado" });
+        }
+
+        if (!perfisAutorizadosBaia.includes(usuario.perfil)) {
+          return res.status(403).json({
+            error: "Sem permissão para editar a baia do solípede",
+          });
+        }
+
+        if (req.body.baia !== null && req.body.baia !== undefined) {
+          const baiaNormalizada = String(req.body.baia).trim();
+          req.body.baia = baiaNormalizada === "" ? null : baiaNormalizada;
+        }
+      }
 
       // Se está tentando alterar esquadrão, validar senha
       if (esquadrao && senha && usuarioId) {
@@ -370,7 +397,20 @@ static async adicionarHoras(req, res) {
   // ===== Prontuário =====
   static async salvarProntuario(req, res) {
     try {
-      let { numero_solipede, tipo, observacao, diagnosticos, recomendacoes, tipo_baixa, data_lancamento, data_validade, precisa_baixar, senha, origem, destino } = req.body;
+      let {
+        numero_solipede,
+        tipo,
+        observacao,
+        diagnosticos,
+        recomendacoes,
+        tipo_baixa,
+        data_lancamento,
+        data_validade,
+        precisa_baixar,
+        senha,
+        origem,
+        destino,
+      } = req.body;
       const usuarioId = req.usuario?.id;
 
       console.log("\n📝 CONTROLLER: salvarProntuario");
@@ -443,7 +483,7 @@ static async adicionarHoras(req, res) {
         precisa_baixar: tipo === "Tratamento" ? precisa_baixar : null, // Salvar valor original
         status_baixa: tipo === "Baixa" ? "pendente" : null,
         origem: origem || null,
-        destino: destino || null
+        destino: destino || null,
       });
 
       // Se for tipo "Baixa", atualizar status do solípede
@@ -568,7 +608,23 @@ static async adicionarHoras(req, res) {
   static async atualizarProntuario(req, res) {
     try {
       const { id } = req.params;
-      const { observacao, diagnosticos, recomendacoes, data_validade } = req.body;
+      const {
+        observacao,
+        diagnosticos,
+        recomendacoes,
+        data_validade,
+        precisa_baixar,
+        foi_responsavel_pela_baixa,
+        tipo_baixa,
+        data_lancamento,
+        status_baixa,
+        data_liberacao,
+        usuario_liberacao_id,
+        origem,
+        destino,
+        alocacao_anterior,
+        alocacao_nova,
+      } = req.body;
       const usuarioId = req.usuario?.id;
 
       console.log("═".repeat(60));
@@ -588,7 +644,27 @@ static async adicionarHoras(req, res) {
 
       // Usar função de auditoria do modelo Prontuario
       const Prontuario = (await import("../models/Prontuario.js")).default;
-      await Prontuario.atualizarComAuditoria(id, { observacao, diagnosticos, recomendacoes, data_validade }, usuarioId);
+      await Prontuario.atualizarComAuditoria(
+        id,
+        {
+          observacao,
+          diagnosticos,
+          recomendacoes,
+          data_validade,
+          precisa_baixar,
+          foi_responsavel_pela_baixa,
+          tipo_baixa,
+          data_lancamento,
+          status_baixa,
+          data_liberacao,
+          usuario_liberacao_id,
+          origem,
+          destino,
+          alocacao_anterior,
+          alocacao_nova,
+        },
+        usuarioId
+      );
       
       res.status(200).json({ success: true, message: "Prontuário atualizado com sucesso" });
     } catch (err) {

@@ -44,7 +44,8 @@ class Prontuario {
         uc.nome as usuario_conclusao_nome,
         uc.re as usuario_conclusao_registro,
         s.nome as solipede_nome,
-        s.esquadrao as solipede_esquadrao
+        s.esquadrao as solipede_esquadrao,
+        s.baia as solipede_baia
       FROM prontuario p
       LEFT JOIN usuarios u ON p.usuarioId = u.id
       LEFT JOIN usuarios ul ON p.usuario_liberacao_id = ul.id
@@ -109,12 +110,14 @@ class Prontuario {
         ul.nome as usuario_liberacao_nome,
         ul.re as usuario_liberacao_registro,
         uc.nome as usuario_conclusao_nome,
-        uc.re as usuario_conclusao_registro
+        uc.re as usuario_conclusao_registro,
+        s.baia as solipede_baia
       FROM prontuario p
       LEFT JOIN usuarios u ON p.usuarioId = u.id
       LEFT JOIN usuarios ua ON p.usuario_atualizacao_id = ua.id
       LEFT JOIN usuarios ul ON p.usuario_liberacao_id = ul.id
       LEFT JOIN usuarios uc ON p.usuario_conclusao_id = uc.id
+      LEFT JOIN solipede s ON p.numero_solipede = s.numero
       WHERE p.numero_solipede = ?
       ORDER BY p.data_criacao DESC
       `,
@@ -235,7 +238,6 @@ class Prontuario {
       valores.push(dados.data_validade);
     }
 
-    // Adicionar campos de auditoria
     campos.push('data_atualizacao = NOW()');
     campos.push('usuario_atualizacao_id = ?');
     valores.push(usuarioId);

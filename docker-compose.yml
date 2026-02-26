@@ -19,9 +19,15 @@ services:
       MYSQL_ROOT_PASSWORD: root
       MYSQL_DATABASE: dashboardrpmon
     ports:
-      - "3306:3306"
+      - "0.0.0.0:3306:3306"
     volumes:
       - mysql_data:/var/lib/mysql
+    networks:
+      - rpmon_network
+
+networks:
+  rpmon_network:
+    driver: bridge
 
 volumes:
   mysql_data:
