@@ -10,6 +10,7 @@ const router = express.Router();
 // Dietas
 router.get("/:prontuarioId/dietas", ProntuarioDietaController.listar);
 router.post("/dietas", ProntuarioDietaController.criar);
+router.patch("/dietas/:id", ProntuarioDietaController.atualizarParcial);
 router.delete("/dietas/:id", ProntuarioDietaController.excluir);
 
 // Movimentações
@@ -20,6 +21,8 @@ router.delete("/movimentacoes/:id", ProntuarioMovimentacaoController.excluir);
 // Restrições
 router.get("/:prontuarioId/restricoes", ProntuarioRestricaoController.listar);
 router.post("/restricoes", ProntuarioRestricaoController.criar);
+router.patch("/restricoes/:id", ProntuarioRestricaoController.atualizarParcial);
+router.post("/restricoes/:id/concluir", ProntuarioRestricaoController.concluirRestricao);
 router.delete("/restricoes/:id", ProntuarioRestricaoController.excluir);
 
 // Suplementações

@@ -1,12 +1,12 @@
 import express from "express";
-import RestricaoService from "../models/RestricaoService.js";
+import ProntuarioRestricoes from "../models/ProntuarioRestricoes.js";
 
 const router = express.Router();
 
 // Rota pública para listar solípedes com restrições ativas
 router.get("/solipedes-com-restricao", async (req, res, next) => {
   try {
-    const numeros = await RestricaoService.listarSolipedesComRestricao();
+    const numeros = await ProntuarioRestricoes.listarSolipedesComRestricao();
     res.status(200).json(numeros);
   } catch (err) {
     console.error("Erro ao listar solípedes com restrição:", err);
