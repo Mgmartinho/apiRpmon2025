@@ -31,7 +31,7 @@ class ProntuarioMovimentacoes {
     const [rows] = await pool.query(
       `SELECT pm.*, p.numero_solipede, u.nome as usuario_nome
        FROM ${tabela} pm
-       JOIN prontuario p ON pm.prontuario_id = p.id
+      JOIN prontuario_geral p ON pm.prontuario_id = p.id
        LEFT JOIN usuarios u ON pm.usuario_id = u.id
        WHERE pm.prontuario_id = ?
        ORDER BY pm.data_movimentacao DESC`,
@@ -46,7 +46,7 @@ class ProntuarioMovimentacoes {
     const [rows] = await pool.query(
       `SELECT pm.*, p.numero_solipede, u.nome as usuario_nome
        FROM ${tabela} pm
-       JOIN prontuario p ON pm.prontuario_id = p.id
+      JOIN prontuario_geral p ON pm.prontuario_id = p.id
        LEFT JOIN usuarios u ON pm.usuario_id = u.id
        WHERE pm.id = ?`,
       [id]
@@ -54,9 +54,9 @@ class ProntuarioMovimentacoes {
     return rows[0] || null;
   }
 
-  static async validarProntuario(prontuarioId) {
-    const [rows] = await pool.query(
-      `SELECT id FROM prontuario WHERE id = ?`,
+  static async validarProntuario(prontuarioId, db = pool) {
+    const [rows] = await db.query(
+      `SELECT id FROM prontuario_geral WHERE id = ?`,
       [prontuarioId]
     );
     return rows.length > 0;
@@ -87,7 +87,7 @@ class ProntuarioMovimentacoes {
     }
 
     // Validar se prontuário existe
-    const prontuarioValido = await this.validarProntuario(prontuario_id);
+    const prontuarioValido = await this.validarProntuario(prontuario_id, db);
     if (!prontuarioValido) {
       throw new Error(`Prontuário ${prontuario_id} não encontrado`);
     }

@@ -5,10 +5,10 @@ class ProntuarioRestricoes {
   static async listarSolipedesComRestricao() {
     const [rows] = await pool.query(
       `SELECT DISTINCT p.numero_solipede
-       FROM prontuario_restricoes pr
-       INNER JOIN prontuario p ON pr.prontuario_id = p.id
-       WHERE (pr.status_conclusao IS NULL OR pr.status_conclusao <> 'concluido')
-         AND (p.status_conclusao IS NULL OR p.status_conclusao <> 'concluido')
+       FROM prontuario p
+       WHERE p.tipo = 'restrições'
+         AND (p.status_conclusao IS NULL OR p.status_conclusao != 'concluido')
+         AND (p.data_validade IS NULL OR p.data_validade >= CURDATE())
        ORDER BY p.numero_solipede`
     );
 
@@ -27,7 +27,7 @@ class ProntuarioRestricoes {
         uc.nome as usuario_conclusao_nome,
         uc.re as usuario_conclusao_registro
        FROM prontuario_restricoes pr
-       INNER JOIN prontuario p ON pr.prontuario_id = p.id
+      INNER JOIN prontuario_geral p ON pr.prontuario_id = p.id
        LEFT JOIN usuarios u ON pr.usuario_id = u.id
        LEFT JOIN solipede s ON p.numero_solipede = s.numero
        LEFT JOIN usuarios uc ON pr.usuario_conclusao_id = uc.id
@@ -48,7 +48,7 @@ class ProntuarioRestricoes {
         uc.nome as usuario_conclusao_nome,
         uc.re as usuario_conclusao_registro
        FROM prontuario_restricoes pr
-       INNER JOIN prontuario p ON pr.prontuario_id = p.id
+      INNER JOIN prontuario_geral p ON pr.prontuario_id = p.id
        LEFT JOIN usuarios u ON pr.usuario_id = u.id
        LEFT JOIN solipede s ON p.numero_solipede = s.numero
        LEFT JOIN usuarios uc ON pr.usuario_conclusao_id = uc.id
@@ -61,10 +61,10 @@ class ProntuarioRestricoes {
   /**
    * Valida se o prontuário existe e pertence a um solípede válido
    */
-  static async validarProntuario(prontuarioId) {
-    const [rows] = await pool.query(
+  static async validarProntuario(prontuarioId, db = pool) {
+    const [rows] = await db.query(
       `SELECT p.id, p.numero_solipede, s.nome as solipede_nome
-       FROM prontuario p
+      FROM prontuario_geral p
        LEFT JOIN solipede s ON p.numero_solipede = s.numero
        WHERE p.id = ?`,
       [prontuarioId]
@@ -75,15 +75,15 @@ class ProntuarioRestricoes {
   /**
    * Valida se o usuário existe e está ativo
    */
-  static async validarUsuario(usuarioId) {
-    const [rows] = await pool.query(
+  static async validarUsuario(usuarioId, db = pool) {
+    const [rows] = await db.query(
       `SELECT id, nome, email FROM usuarios WHERE id = ? AND ativo = TRUE`,
       [usuarioId]
     );
     return rows[0];
   }
 
-  static async criar(dados) {
+  static async criar(dados, db = pool) {
     const {
       prontuario_id,
       usuario_id,
@@ -101,13 +101,13 @@ class ProntuarioRestricoes {
     }
 
     // Validar se prontuário existe
-    const prontuarioValido = await this.validarProntuario(prontuario_id);
+    const prontuarioValido = await this.validarProntuario(prontuario_id, db);
     if (!prontuarioValido) {
       throw new Error(`Prontuário ${prontuario_id} não encontrado`);
     }
 
     // Validar se usuário existe e está ativo
-    const usuarioValido = await this.validarUsuario(usuario_id);
+    const usuarioValido = await this.validarUsuario(usuario_id, db);
     if (!usuarioValido) {
       throw new Error(`Usuário ${usuario_id} não encontrado ou inativo`);
     }
@@ -115,7 +115,7 @@ class ProntuarioRestricoes {
     console.log("✅ Validações passadas! Inserindo restrição...");
 
     // Inserir restrição com os campos corretos do banco
-    const [result] = await pool.query(
+    const [result] = await db.query(
       `INSERT INTO prontuario_restricoes
        (prontuario_id, usuario_id, restricao, recomendacoes, status_conclusao, data_validade)
        VALUES (?, ?, ?, ?, ?, ?)`,

@@ -31,7 +31,7 @@ class ProntuarioDietas {
     const [rows] = await pool.query(
       `SELECT pd.*, p.numero_solipede, u.nome as usuario_nome
        FROM ${tabela} pd
-       JOIN prontuario p ON pd.prontuario_id = p.id
+      JOIN prontuario_geral p ON pd.prontuario_id = p.id
        LEFT JOIN usuarios u ON pd.usuario_id = u.id
        WHERE pd.prontuario_id = ?
        ORDER BY pd.id DESC`,
@@ -46,7 +46,7 @@ class ProntuarioDietas {
     const [rows] = await pool.query(
       `SELECT pd.*, p.numero_solipede, u.nome as usuario_nome
        FROM ${tabela} pd
-       JOIN prontuario p ON pd.prontuario_id = p.id
+      JOIN prontuario_geral p ON pd.prontuario_id = p.id
        LEFT JOIN usuarios u ON pd.usuario_id = u.id
        WHERE pd.id = ?`,
       [id]
@@ -56,7 +56,7 @@ class ProntuarioDietas {
 
   static async validarProntuario(prontuarioId, db = pool) {
     const [rows] = await db.query(
-      `SELECT id, numero_solipede FROM prontuario WHERE id = ?`,
+      `SELECT id, numero_solipede FROM prontuario_geral WHERE id = ?`,
       [prontuarioId]
     );
     return rows[0] || null;

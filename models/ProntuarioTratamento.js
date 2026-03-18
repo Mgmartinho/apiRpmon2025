@@ -14,7 +14,7 @@ class ProntuarioTratamentos {
         uc.re as usuario_conclusao_registro,
         s.nome as solipede_nome
        FROM prontuario_tratamentos pt
-       INNER JOIN prontuario p ON pt.prontuario_id = p.id
+      INNER JOIN prontuario_geral p ON pt.prontuario_id = p.id
        LEFT JOIN usuarios u ON pt.usuario_id = u.id
        LEFT JOIN usuarios uc ON pt.usuario_conclusao_id = uc.id
        LEFT JOIN solipede s ON p.numero_solipede = s.numero
@@ -33,7 +33,7 @@ class ProntuarioTratamentos {
         u.nome as usuario_nome,
         s.nome as solipede_nome
        FROM prontuario_tratamentos pt
-       INNER JOIN prontuario p ON pt.prontuario_id = p.id
+      INNER JOIN prontuario_geral p ON pt.prontuario_id = p.id
        LEFT JOIN usuarios u ON pt.usuario_id = u.id
        LEFT JOIN solipede s ON p.numero_solipede = s.numero
        WHERE pt.id = ?`,
@@ -45,10 +45,10 @@ class ProntuarioTratamentos {
   /**
    * Valida se o prontuário existe e pertence a um solípede válido
    */
-  static async validarProntuario(prontuarioId) {
-    const [rows] = await pool.query(
+  static async validarProntuario(prontuarioId, db = pool) {
+    const [rows] = await db.query(
       `SELECT p.id, p.numero_solipede, s.nome as solipede_nome
-       FROM prontuario p
+      FROM prontuario_geral p
        LEFT JOIN solipede s ON p.numero_solipede = s.numero
        WHERE p.id = ?`,
       [prontuarioId]
@@ -59,15 +59,15 @@ class ProntuarioTratamentos {
   /**
    * Valida se o usuário existe e está ativo
    */
-  static async validarUsuario(usuarioId) {
-    const [rows] = await pool.query(
+  static async validarUsuario(usuarioId, db = pool) {
+    const [rows] = await db.query(
       `SELECT id, nome, email FROM usuarios WHERE id = ? AND ativo = TRUE`,
       [usuarioId]
     );
     return rows[0];
   }
 
-static async criar(dados) {
+static async criar(dados, db = pool) {
   const {
     prontuario_id,
     diagnostico,
@@ -91,21 +91,21 @@ static async criar(dados) {
   }
 
   // Validar se prontuário existe
-  const prontuarioValido = await this.validarProntuario(prontuario_id);
+  const prontuarioValido = await this.validarProntuario(prontuario_id, db);
   if (!prontuarioValido) {
     throw new Error("Prontuário não encontrado");
   }
   console.log("✅ Prontuário válido:", prontuarioValido);
 
   // Validar se usuário existe
-  const usuarioValido = await this.validarUsuario(usuario_id);
+  const usuarioValido = await this.validarUsuario(usuario_id, db);
   if (!usuarioValido) {
     throw new Error("Usuário não encontrado ou inativo");
   }
   console.log("✅ Usuário válido:", usuarioValido);
 
   // Inserir tratamento
-  const [result] = await pool.query(
+  const [result] = await db.query(
     `INSERT INTO prontuario_tratamentos
      (prontuario_id, diagnostico, observacao_clinica, prescricao, usuario_id, precisa_baixar, foi_responsavel_pela_baixa, status_conclusao)
      VALUES (?, ?, ?, ?, ?, ?, ?, 'em_andamento')`,

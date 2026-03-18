@@ -65,21 +65,21 @@ export const criar = async (req, res) => {
     
     if (!solipedes || solipedes.length === 0) {
       console.log("❌ Erro: Solípede não encontrado");
+      await connection.rollback();
+      connection.release();
+      connection = null;
       return res.status(404).json({ erro: `Solípede ${numero_solipede} não encontrado` });
     }
     
     console.log("✅ Solípede encontrado:", solipedes[0].nome);
     
-    // PASSO 2: Criar registro base na tabela prontuario
-    console.log("📝 Criando registro base na tabela prontuario...");
-    const observacaoCompleta = tipo_dieta 
-      ? `Tipo: ${tipo_dieta}\n${descricao || 'Sem descrição adicional'}`
-      : (descricao || 'Dieta registrada');
+    // PASSO 2: Criar registro base na tabela prontuario_geral
+    console.log("📝 Criando registro base na tabela prontuario_geral...");
     
     const [resultProntuario] = await connection.query(
-      `INSERT INTO prontuario (numero_solipede, tipo, observacao, usuarioId) 
-       VALUES (?, 'Dieta', ?, ?)`,
-      [numero_solipede, observacaoCompleta, usuario_id]
+      `INSERT INTO prontuario_geral (numero_solipede, tipo, usuarioId, data_criacao, data_atualizacao)
+       VALUES (?, 'Dieta', ?, NOW(), NOW())`,
+      [numero_solipede, usuario_id]
     );
     
     const prontuario_id = resultProntuario.insertId;
@@ -105,6 +105,8 @@ export const criar = async (req, res) => {
     const dieta_id = await ProntuarioDietas.criar(dados, connection);
 
     await connection.commit();
+    connection.release();
+    connection = null;
     
     console.log("✅ Dieta criada com sucesso!");
     console.log("   - Prontuário ID:", prontuario_id);

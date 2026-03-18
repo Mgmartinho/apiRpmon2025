@@ -11,7 +11,12 @@ import SolipedeController from "../controllers/solipedeController.js";
 
 const routes = (app) => {
   app.get("/", (req, res) => {
-    res.status(200).send("API rodando com MySQL");
+    res.status(200).send(`
+        <h1>Bem-vindo à API de Gestão de FVR</h1>
+        <p>Esta API permite gerenciar solípedes, prontuários, ferrageamentos e muito mais.</p>
+        <p>para fazer o acesso às rotas, utilize a rota 
+        <a href="http://rpmon.intranet.policiamilitar.sp.gov.br/dashboard">RPMon Portal Veterinário</a>.</p>
+      `);
   });
 
   // ROTA DE DEBUG - Testar token

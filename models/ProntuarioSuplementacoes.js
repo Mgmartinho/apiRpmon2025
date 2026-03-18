@@ -31,7 +31,7 @@ class ProntuarioSuplementacoes {
     const [rows] = await pool.query(
       `SELECT ps.*, p.numero_solipede, u.nome as usuario_nome
        FROM ${tabela} ps
-       JOIN prontuario p ON ps.prontuario_id = p.id
+      JOIN prontuario_geral p ON ps.prontuario_id = p.id
        LEFT JOIN usuarios u ON ps.usuario_id = u.id
        WHERE ps.prontuario_id = ?
        ORDER BY ps.id DESC`,
@@ -46,7 +46,7 @@ class ProntuarioSuplementacoes {
     const [rows] = await pool.query(
       `SELECT ps.*, p.numero_solipede, u.nome as usuario_nome
        FROM ${tabela} ps
-       JOIN prontuario p ON ps.prontuario_id = p.id
+      JOIN prontuario_geral p ON ps.prontuario_id = p.id
        LEFT JOIN usuarios u ON ps.usuario_id = u.id
        WHERE ps.id = ?`,
       [id]
@@ -54,9 +54,9 @@ class ProntuarioSuplementacoes {
     return rows[0] || null;
   }
 
-  static async validarProntuario(prontuarioId) {
-    const [rows] = await pool.query(
-      `SELECT id FROM prontuario WHERE id = ?`,
+  static async validarProntuario(prontuarioId, db = pool) {
+    const [rows] = await db.query(
+      `SELECT id FROM prontuario_geral WHERE id = ?`,
       [prontuarioId]
     );
     return rows.length > 0;
@@ -106,15 +106,26 @@ class ProntuarioSuplementacoes {
 
     const { tabela, colunas } = await this.obterColunasTabela(db);
 
-    const campos = ["prontuario_id", "usuario_id", "produto", "dose", "frequencia", "descricao"];
+    const campoTextoLivre =
+      (colunas.has("observacoes") && "observacoes") ||
+      (colunas.has("observacao") && "observacao") ||
+      (colunas.has("descricao") && "descricao") ||
+      (colunas.has("recomendacoes") && "recomendacoes") ||
+      null;
+
+    const campos = ["prontuario_id", "usuario_id", "produto", "dose", "frequencia"];
     const valores = [
       prontuario_id,
       usuario_id,
       produto || null,
       dose || null,
       frequencia || null,
-      descricao || null,
     ];
+
+    if (campoTextoLivre) {
+      campos.push(campoTextoLivre);
+      valores.push(descricao || null);
+    }
 
     if (colunas.has("data_inicio")) {
       campos.push("data_inicio");

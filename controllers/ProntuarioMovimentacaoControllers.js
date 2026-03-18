@@ -1,4 +1,5 @@
 import ProntuarioMovimentacoes from "../models/ProntuarioMovimentacao.js";
+import pool from "../config/mysqlConnect.js";
 
 export const listar = async (req, res) => {
   try {
@@ -21,6 +22,7 @@ export const listar = async (req, res) => {
 };
 
 export const criar = async (req, res) => {
+  let connection;
   try {
     console.log("\n🚚 === CRIAR MOVIMENTAÇÃO ===");
     console.log("📦 Body completo:", JSON.stringify(req.body, null, 2));
@@ -60,31 +62,33 @@ export const criar = async (req, res) => {
       });
     }
     
-    // Importar pool para criar o registro base
-    const pool = (await import("../config/mysqlConnect.js")).default;
+    connection = await pool.getConnection();
+    await connection.beginTransaction();
     
     // PASSO 1: Verificar se o solípede existe
     console.log("🔍 Verificando se solípede existe:", numero_solipede);
-    const [solipedes] = await pool.query(
+    const [solipedes] = await connection.query(
       `SELECT numero, nome FROM solipede WHERE numero = ?`,
       [numero_solipede]
     );
     
     if (!solipedes || solipedes.length === 0) {
       console.log("❌ Erro: Solípede não encontrado");
+      await connection.rollback();
+      connection.release();
+      connection = null;
       return res.status(404).json({ erro: `Solípede ${numero_solipede} não encontrado` });
     }
     
     console.log("✅ Solípede encontrado:", solipedes[0].nome);
     
-    // PASSO 2: Criar registro base na tabela prontuario
-    console.log("📝 Criando registro base na tabela prontuario...");
-    const observacaoCompleta = `Destino: ${destino}\nMotivo: ${motivo}`;
+    // PASSO 2: Criar registro base na tabela prontuario_geral
+    console.log("📝 Criando registro base na tabela prontuario_geral...");
     
-    const [resultProntuario] = await pool.query(
-      `INSERT INTO prontuario (numero_solipede, tipo, observacao, usuarioId) 
-       VALUES (?, 'Movimentação', ?, ?)`,
-      [numero_solipede, observacaoCompleta, usuario_id]
+    const [resultProntuario] = await connection.query(
+      `INSERT INTO prontuario_geral (numero_solipede, tipo, usuarioId, data_criacao, data_atualizacao)
+       VALUES (?, 'Movimentação', ?, NOW(), NOW())`,
+      [numero_solipede, usuario_id]
     );
     
     const prontuario_id = resultProntuario.insertId;
@@ -105,7 +109,11 @@ export const criar = async (req, res) => {
     
     console.log("   - Dados para movimentação:", JSON.stringify(dados, null, 2));
     
-    const movimentacao_id = await ProntuarioMovimentacoes.criar(dados);
+    const movimentacao_id = await ProntuarioMovimentacoes.criar(dados, connection);
+
+    await connection.commit();
+    connection.release();
+    connection = null;
     
     console.log("✅ Movimentação criada com sucesso!");
     console.log("   - Prontuário ID:", prontuario_id);
@@ -120,6 +128,11 @@ export const criar = async (req, res) => {
     });
     
   } catch (error) {
+    if (connection) {
+      await connection.rollback();
+      connection.release();
+    }
+
     console.error("❌ ERRO COMPLETO:", error);
     console.error("   - Mensagem:", error.message);
     console.error("   - Stack:", error.stack);
