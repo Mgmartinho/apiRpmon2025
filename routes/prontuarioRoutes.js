@@ -2,6 +2,7 @@ import express from "express";
 import ProntuarioController from "../controllers/ProntuarioController.js";
 import SolipedeController from "../controllers/solipedeController.js";
 import authMiddleware from "../middlewares/authMiddleware.js";
+import * as NovoProntuarioController from "../controllers/NovoProntuarioController.js";
 
 const router = express.Router();
 
@@ -13,6 +14,10 @@ router.get("/todos", (req, res, next) => {
   console.log("🎯 ROTA /todos CAPTURADA!");
   ProntuarioController.listarTodos(req, res, next);
 });
+
+// NOVO MODELO — prontuario_geral com todos os complementos
+router.get("/novo-modelo", NovoProntuarioController.listarTodos);
+router.get("/novo-modelo/:numero", NovoProntuarioController.listarPorSolipede);
 
 // 2. Rotas com parâmetro + sufixo específico
 router.get("/:numero_solipede/baixas-pendentes", ProntuarioController.contarBaixasPendentes);
@@ -56,7 +61,7 @@ router.post("/", (req, res, next) => {
 // 4. Rota PUT para atualizar prontuário (edição)
 router.put("/:id", (req, res, next) => {
   console.log(`✏️ ROTA PUT /:id CAPTURADA com ID: ${req.params.id}`);
-  SolipedeController.atualizarProntuario(req, res, next);
+  ProntuarioController.atualizarRegistro(req, res, next);
 });
 
 // 5. Rota DELETE para deletar prontuário

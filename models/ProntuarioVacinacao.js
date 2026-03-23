@@ -1,19 +1,19 @@
 import pool from "../config/mysqlConnect.js";
 
-class ProntuarioSuplementacoes {
+class ProntuarioVacinacao {
 
   static async obterNomeTabela(db = pool) {
-    const [plural] = await db.query(`SHOW TABLES LIKE 'prontuario_suplementacoes'`);
+    const [plural] = await db.query(`SHOW TABLES LIKE 'prontuario_vacinacoes'`);
     if (plural.length > 0) {
-      return "prontuario_suplementacoes";
+      return "prontuario_vacinacoes";
     }
 
-    const [singular] = await db.query(`SHOW TABLES LIKE 'prontuario_suplementacao'`);
+    const [singular] = await db.query(`SHOW TABLES LIKE 'prontuario_vacinacao'`);
     if (singular.length > 0) {
-      return "prontuario_suplementacao";
+      return "prontuario_vacinacao";
     }
 
-    throw new Error("Tabela de suplementações não encontrada (prontuario_suplementacoes/prontuario_suplementacao)");
+    throw new Error("Tabela de vacinações não encontrada (prontuario_vacinacoes/prontuario_vacinacao)");
   }
 
   static async obterColunasTabela(db = pool) {
@@ -29,12 +29,12 @@ class ProntuarioSuplementacoes {
     const tabela = await this.obterNomeTabela();
 
     const [rows] = await pool.query(
-      `SELECT ps.*, p.numero_solipede, u.nome as usuario_nome
-       FROM ${tabela} ps
-      JOIN prontuario_geral p ON ps.prontuario_id = p.id
-       LEFT JOIN usuarios u ON ps.usuario_id = u.id
-       WHERE ps.prontuario_id = ?
-       ORDER BY ps.id DESC`,
+      `SELECT pv.*, p.numero_solipede, u.nome as usuario_nome, u.re as usuario_registro
+       FROM ${tabela} pv
+       JOIN prontuario_geral p ON pv.prontuario_id = p.id
+       LEFT JOIN usuarios u ON pv.usuario_id = u.id
+       WHERE pv.prontuario_id = ?
+       ORDER BY pv.data_criacao DESC`,
       [prontuarioId]
     );
     return rows;
@@ -44,11 +44,11 @@ class ProntuarioSuplementacoes {
     const tabela = await this.obterNomeTabela();
 
     const [rows] = await pool.query(
-      `SELECT ps.*, p.numero_solipede, u.nome as usuario_nome
-       FROM ${tabela} ps
-      JOIN prontuario_geral p ON ps.prontuario_id = p.id
-       LEFT JOIN usuarios u ON ps.usuario_id = u.id
-       WHERE ps.id = ?`,
+      `SELECT pv.*, p.numero_solipede, u.nome as usuario_nome, u.re as usuario_registro
+       FROM ${tabela} pv
+       JOIN prontuario_geral p ON pv.prontuario_id = p.id
+       LEFT JOIN usuarios u ON pv.usuario_id = u.id
+       WHERE pv.id = ?`,
       [id]
     );
     return rows[0] || null;
@@ -56,18 +56,18 @@ class ProntuarioSuplementacoes {
 
   static async validarProntuario(prontuarioId, db = pool) {
     const [rows] = await db.query(
-      `SELECT id FROM prontuario_geral WHERE id = ?`,
+      `SELECT id, numero_solipede FROM prontuario_geral WHERE id = ?`,
       [prontuarioId]
     );
-    return rows.length > 0;
+    return rows[0] || null;
   }
 
   static async validarUsuario(usuarioId, db = pool) {
     const [rows] = await db.query(
-      `SELECT id FROM usuarios WHERE id = ? AND ativo = TRUE`,
+      `SELECT id, nome, email FROM usuarios WHERE id = ? AND ativo = TRUE`,
       [usuarioId]
     );
-    return rows.length > 0;
+    return rows[0] || null;
   }
 
   static async criar(dados, db = pool) {
@@ -75,21 +75,25 @@ class ProntuarioSuplementacoes {
       prontuario_id,
       usuario_id,
       produto,
+      partida,
+      fabricacao,
+      lote,
       dose,
-      frequencia,
+      data_inicio,
+      data_validade,
       descricao,
       data_fim,
       status_conclusao,
     } = dados;
 
-    console.log("📝 Criando suplementação com dados:", dados);
+    console.log("📝 Criando vacinação com dados:", dados);
 
     if (!prontuario_id || !usuario_id) {
       throw new Error("prontuario_id e usuario_id são obrigatórios");
     }
 
-    if ((!produto || !String(produto).trim()) && (!descricao || !String(descricao).trim())) {
-      throw new Error("Produto ou descrição é obrigatório");
+    if (!produto || !String(produto).trim()) {
+      throw new Error("Produto é obrigatório");
     }
 
     // Validar se prontuário existe
@@ -106,30 +110,47 @@ class ProntuarioSuplementacoes {
 
     const { tabela, colunas } = await this.obterColunasTabela(db);
 
-    const campoTextoLivre =
-      (colunas.has("observacoes") && "observacoes") ||
-      (colunas.has("observacao") && "observacao") ||
-      (colunas.has("descricao") && "descricao") ||
-      (colunas.has("recomendacoes") && "recomendacoes") ||
-      null;
-
-    const campos = ["prontuario_id", "usuario_id", "produto", "dose", "frequencia"];
+    const campos = ["prontuario_id", "usuario_id", "produto"];
     const valores = [
       prontuario_id,
       usuario_id,
       produto || null,
-      dose || null,
-      frequencia || null,
     ];
 
-    if (campoTextoLivre) {
-      campos.push(campoTextoLivre);
-      valores.push(descricao || null);
+    // Campos opcionais com detecção dinâmica
+    if (colunas.has("partida")) {
+      campos.push("partida");
+      valores.push(partida || null);
+    }
+
+    if (colunas.has("fabricacao")) {
+      campos.push("fabricacao");
+      valores.push(fabricacao || null);
+    }
+
+    if (colunas.has("lote")) {
+      campos.push("lote");
+      valores.push(lote || null);
+    }
+
+    if (colunas.has("dose")) {
+      campos.push("dose");
+      valores.push(dose || null);
     }
 
     if (colunas.has("data_inicio")) {
       campos.push("data_inicio");
-      valores.push(new Date().toISOString().split("T")[0]);
+      valores.push(data_inicio || new Date().toISOString().split("T")[0]);
+    }
+
+    if (colunas.has("data_validade")) {
+      campos.push("data_validade");
+      valores.push(data_validade || null);
+    }
+
+    if (colunas.has("descricao")) {
+      campos.push("descricao");
+      valores.push(descricao || null);
     }
 
     if (colunas.has("data_fim")) {
@@ -151,7 +172,7 @@ class ProntuarioSuplementacoes {
       valores
     );
 
-    console.log("✅ Suplementação criada! ID:", result.insertId);
+    console.log("✅ Vacinação criada! ID:", result.insertId);
     return result.insertId;
   }
 
@@ -173,32 +194,32 @@ class ProntuarioSuplementacoes {
     }
 
     const { tabela, colunas } = await this.obterColunasTabela(db);
+    const camposPermitidos = [
+      "produto",
+      "partida",
+      "fabricacao",
+      "lote",
+      "dose",
+      "data_inicio",
+      "data_validade",
+      "descricao",
+      "data_fim",
+      "status_conclusao",
+      "usuario_atualizacao",
+    ];
+
     const camposParaAtualizar = [];
     const valores = [];
 
-    const mapaCampos = {
-      produto: "produto",
-      dose: "dose",
-      frequencia: "frequencia",
-      descricao: (colunas.has("descricao") && "descricao") || (colunas.has("observacao") && "observacao") || (colunas.has("observacoes") && "observacoes") || (colunas.has("recomendacoes") && "recomendacoes") || null,
-      data_fim: colunas.has("data_fim") ? "data_fim" : null,
-      status_conclusao: colunas.has("status_conclusao") ? "status_conclusao" : null,
-      usuario_atualizacao: colunas.has("usuario_atualizacao") ? "usuario_atualizacao" : null,
-    };
-
-    for (const [campoEntrada, campoTabela] of Object.entries(mapaCampos)) {
-      if (campoTabela && Object.prototype.hasOwnProperty.call(dados, campoEntrada)) {
-        camposParaAtualizar.push(`${campoTabela} = ?`);
-        valores.push(dados[campoEntrada]);
+    for (const campo of camposPermitidos) {
+      if (Object.prototype.hasOwnProperty.call(dados, campo) && colunas.has(campo)) {
+        camposParaAtualizar.push(`${campo} = ?`);
+        valores.push(dados[campo] || null);
       }
     }
 
-    if (colunas.has("data_atualizacao")) {
-      camposParaAtualizar.push("data_atualizacao = NOW()");
-    }
-
     if (camposParaAtualizar.length === 0) {
-      throw new Error("Nenhum campo válido para atualização");
+      return registroAtual;
     }
 
     valores.push(id);
@@ -210,12 +231,8 @@ class ProntuarioSuplementacoes {
       valores
     );
 
-    if (result.affectedRows === 0) {
-      return null;
-    }
-
-    return this.buscarPorId(id);
+    return result.affectedRows > 0;
   }
 }
 
-export default ProntuarioSuplementacoes;
+export default ProntuarioVacinacao;

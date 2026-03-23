@@ -1,5 +1,13 @@
 import ProntuarioTratamentos from "../models/ProntuarioTratamento.js";
 import pool from "../config/mysqlConnect.js";
+import Solipede from "../models/Solipedes.js";
+
+const normalizarTexto = (valor = "") =>
+  String(valor)
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .toLowerCase()
+    .trim();
 
 export const listar = async (req, res) => {
   try {
@@ -108,6 +116,20 @@ export const criar = async (req, res) => {
     
     const tratamento_id = await ProntuarioTratamentos.criar(dados, connection);
 
+    // Se o tratamento exige baixa, já baixa o solípede no mesmo commit.
+    if (normalizarTexto(precisa_baixar) === "sim") {
+      const [updateStatus] = await connection.query(
+        `UPDATE solipede SET status = ? WHERE numero = ?`,
+        ["Baixado", numero_solipede]
+      );
+
+      if (!updateStatus || updateStatus.affectedRows === 0) {
+        throw new Error(`Não foi possível atualizar status do solípede ${numero_solipede} para Baixado`);
+      }
+
+      console.log(`✅ Solípede ${numero_solipede} alterado para Baixado (tratamento com precisa_baixar='sim')`);
+    }
+
     await connection.commit();
     connection.release();
     connection = null;
@@ -161,9 +183,37 @@ export const atualizarStatus = async (req, res) => {
       return res.status(400).json({ erro: "Status inválido. Use 'em_andamento' ou 'concluido'" });
     }
 
+    const tratamentoAtual = await ProntuarioTratamentos.buscarPorId(id);
+    if (!tratamentoAtual) {
+      return res.status(404).json({ erro: "Tratamento não encontrado" });
+    }
+
     const sucesso = await ProntuarioTratamentos.atualizarStatus(id, status_conclusao, usuario_conclusao_id);
 
     if (!sucesso) return res.status(404).json({ erro: "Tratamento não encontrado" });
+
+    const precisaBaixar = normalizarTexto(tratamentoAtual.precisa_baixar) === "sim";
+
+    if (precisaBaixar && status_conclusao === "em_andamento") {
+      await Solipede.atualizarStatus(tratamentoAtual.numero_solipede, "Baixado");
+    }
+
+    if (status_conclusao === "concluido") {
+      const [pendentes] = await pool.query(
+        `SELECT COUNT(*) AS total
+         FROM prontuario_tratamentos pt
+         INNER JOIN prontuario_geral pg ON pg.id = pt.prontuario_id
+         WHERE pg.numero_solipede = ?
+           AND pt.precisa_baixar = 'sim'
+           AND (pt.status_conclusao IS NULL OR pt.status_conclusao <> 'concluido')`,
+        [tratamentoAtual.numero_solipede]
+      );
+
+      const totalPendentes = Number(pendentes?.[0]?.total || 0);
+      if (totalPendentes === 0) {
+        await Solipede.atualizarStatus(tratamentoAtual.numero_solipede, "Ativo");
+      }
+    }
 
     res.json({ 
       success: true,

@@ -160,7 +160,7 @@ class ProntuarioDietas {
 
     const { tabela, colunas } = await this.obterColunasTabela(db);
 
-    const camposPermitidos = ["tipo_dieta", "descricao", "data_criacao", "data_fim", "status_conclusao"];
+    const camposPermitidos = ["tipo_dieta", "descricao", "data_criacao", "data_fim", "status_conclusao", "usuario_atualizacao"];
     const camposParaAtualizar = [];
     const valores = [];
 
@@ -169,6 +169,10 @@ class ProntuarioDietas {
         camposParaAtualizar.push(`${campo} = ?`);
         valores.push(dados[campo]);
       }
+    }
+
+    if (colunas.has("data_atualizacao")) {
+      camposParaAtualizar.push("data_atualizacao = NOW()");
     }
 
     if (camposParaAtualizar.length === 0) {

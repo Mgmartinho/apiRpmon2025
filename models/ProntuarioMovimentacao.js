@@ -74,8 +74,12 @@ class ProntuarioMovimentacoes {
     const {
       prontuario_id,
       usuario_id,
+      tipo_movimentacao,
       motivo,
+      origem,
       destino,
+      destino_final,
+      observacoes,
       data_movimentacao,
       status_conclusao,
     } = dados;
@@ -99,6 +103,13 @@ class ProntuarioMovimentacoes {
     }
 
     const { tabela, colunas } = await this.obterColunasTabela(db);
+    const colunaDestinoFinal = colunas.has("destino_final")
+      ? "destino_final"
+      : colunas.has("destinoFinal")
+        ? "destinoFinal"
+        : colunas.has("alocacao_final")
+          ? "alocacao_final"
+          : null;
 
     const campos = ["prontuario_id", "usuario_id", "destino", "motivo"];
     const valores = [
@@ -107,6 +118,26 @@ class ProntuarioMovimentacoes {
       destino || null,
       motivo || null,
     ];
+
+    if (colunas.has("tipo_movimentacao")) {
+      campos.push("tipo_movimentacao");
+      valores.push(tipo_movimentacao || "Movimentacao");
+    }
+
+    if (colunas.has("observacoes")) {
+      campos.push("observacoes");
+      valores.push(observacoes || null);
+    }
+
+    if (colunas.has("origem")) {
+      campos.push("origem");
+      valores.push(origem || null);
+    }
+
+    if (colunaDestinoFinal) {
+      campos.push(colunaDestinoFinal);
+      valores.push(destino_final || null);
+    }
 
     if (colunas.has("data_movimentacao")) {
       campos.push("data_movimentacao");
@@ -139,6 +170,77 @@ class ProntuarioMovimentacoes {
       [id]
     );
     return result.affectedRows > 0;
+  }
+
+  static async atualizarParcial(id, dados, db = pool) {
+    const registroAtual = await this.buscarPorId(id);
+    if (!registroAtual) {
+      return null;
+    }
+
+    const { tabela, colunas } = await this.obterColunasTabela(db);
+    const colunaDestinoFinal = colunas.has("destino_final")
+      ? "destino_final"
+      : colunas.has("destinoFinal")
+        ? "destinoFinal"
+        : colunas.has("alocacao_final")
+          ? "alocacao_final"
+          : null;
+
+    if (Object.prototype.hasOwnProperty.call(dados, "destino_final") && !colunaDestinoFinal) {
+      throw new Error("A tabela de movimentacoes nao possui coluna de destino final (destino_final/destinoFinal/alocacao_final)");
+    }
+    const camposParaAtualizar = [];
+    const valores = [];
+
+    const mapaCampos = {
+      motivo: "motivo",
+      origem: colunas.has("origem") ? "origem" : null,
+      destino: "destino",
+      destino_final: colunaDestinoFinal,
+      data_movimentacao: colunas.has("data_movimentacao") ? "data_movimentacao" : null,
+      status_conclusao: colunas.has("status_conclusao") ? "status_conclusao" : null,
+      usuario_conclusao_id: colunas.has("usuario_conclusao_id") ? "usuario_conclusao_id" : null,
+      usuario_atualizacao: colunas.has("usuario_atualizacao") ? "usuario_atualizacao" : null,
+    };
+
+    for (const [campoEntrada, campoTabela] of Object.entries(mapaCampos)) {
+      if (campoTabela && Object.prototype.hasOwnProperty.call(dados, campoEntrada)) {
+        camposParaAtualizar.push(`${campoTabela} = ?`);
+        valores.push(dados[campoEntrada]);
+      }
+    }
+
+    if (colunas.has("data_atualizacao")) {
+      camposParaAtualizar.push("data_atualizacao = NOW()");
+    }
+
+    if (
+      colunas.has("data_conclusao") &&
+      Object.prototype.hasOwnProperty.call(dados, "status_conclusao") &&
+      String(dados.status_conclusao || "").toLowerCase() === "concluido"
+    ) {
+      camposParaAtualizar.push("data_conclusao = NOW()");
+    }
+
+    if (camposParaAtualizar.length === 0) {
+      throw new Error("Nenhum campo válido para atualização");
+    }
+
+    valores.push(id);
+
+    const [result] = await db.query(
+      `UPDATE ${tabela}
+       SET ${camposParaAtualizar.join(", ")}
+       WHERE id = ?`,
+      valores
+    );
+
+    if (result.affectedRows === 0) {
+      return null;
+    }
+
+    return this.buscarPorId(id);
   }
 }
 

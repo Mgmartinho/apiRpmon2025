@@ -4,6 +4,7 @@ import * as ProntuarioMovimentacaoController from "../controllers/ProntuarioMovi
 import * as ProntuarioRestricaoController from "../controllers/ProntuarioRestricaoControllers.js";
 import * as ProntuarioSuplementacaoController from "../controllers/ProntuarioSuplementacaoControllers.js";
 import * as ProntuarioTratamentoController from "../controllers/ProntuarioTratamentoControllers.js";
+import * as ProntuarioVacinacaoController from "../controllers/ProntuarioVacinacaoControllers.js";
 
 const router = express.Router();
 
@@ -35,5 +36,11 @@ router.get("/:prontuarioId/tratamentos", ProntuarioTratamentoController.listar);
 router.post("/tratamentos", ProntuarioTratamentoController.criar);
 router.patch("/tratamentos/:id/status", ProntuarioTratamentoController.atualizarStatus);
 router.delete("/tratamentos/:id", ProntuarioTratamentoController.excluir);
+
+// Vacinações
+router.get("/:prontuarioId/vacinacoes", ProntuarioVacinacaoController.listar);
+router.post("/vacinacoes", ProntuarioVacinacaoController.criar);
+router.patch("/vacinacoes/:id", ProntuarioVacinacaoController.atualizarParcial);
+router.delete("/vacinacoes/:id", ProntuarioVacinacaoController.excluir);
 
 export default router;

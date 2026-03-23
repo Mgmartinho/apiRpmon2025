@@ -4,15 +4,43 @@ class ProntuarioRestricoes {
 
   static async listarSolipedesComRestricao() {
     const [rows] = await pool.query(
-      `SELECT DISTINCT p.numero_solipede
-       FROM prontuario p
-       WHERE p.tipo = 'restrições'
-         AND (p.status_conclusao IS NULL OR p.status_conclusao != 'concluido')
-         AND (p.data_validade IS NULL OR p.data_validade >= CURDATE())
-       ORDER BY p.numero_solipede`
+      `SELECT DISTINCT pg.numero_solipede
+       FROM prontuario_restricoes pr
+       INNER JOIN prontuario_geral pg ON pr.prontuario_id = pg.id
+       WHERE pg.tipo = 'Restrições'
+         AND (pr.status_conclusao IS NULL OR pr.status_conclusao != 'concluido')
+         AND (pr.data_validade IS NULL OR pr.data_validade >= CURDATE())
+       ORDER BY pg.numero_solipede`
     );
 
     return rows.map((row) => row.numero_solipede);
+  }
+
+  static async listarPorSolipedeNumero(numeroSolipede) {
+    const [rows] = await pool.query(
+      `SELECT 
+        pg.id,
+        pg.numero_solipede,
+        pg.tipo,
+        pr.restricao AS observacao,
+        pr.recomendacoes,
+        pg.data_criacao,
+        pr.data_validade,
+        pr.status_conclusao,
+        u.nome AS usuario_nome,
+        u.re AS usuario_registro
+       FROM prontuario_restricoes pr
+       INNER JOIN prontuario_geral pg ON pr.prontuario_id = pg.id
+       LEFT JOIN usuarios u ON pr.usuario_id = u.id
+       WHERE pg.numero_solipede = ?
+         AND pg.tipo = 'Restrições'
+         AND (pr.status_conclusao IS NULL OR pr.status_conclusao != 'concluido')
+         AND (pr.data_validade IS NULL OR pr.data_validade >= CURDATE())
+       ORDER BY pg.data_criacao DESC`,
+      [numeroSolipede]
+    );
+
+    return rows;
   }
   
   static async listarPorProntuario(prontuarioId) {
@@ -142,15 +170,21 @@ class ProntuarioRestricoes {
   }
 
   static async atualizarParcial(id, dados) {
-    const camposPermitidos = ["restricao", "recomendacoes", "data_validade", "status_conclusao"];
+    const [colunasRows] = await pool.query("SHOW COLUMNS FROM prontuario_restricoes");
+    const colunas = new Set(colunasRows.map((row) => row.Field));
+    const camposPermitidos = ["restricao", "recomendacoes", "data_validade", "status_conclusao", "usuario_atualizacao"];
     const camposParaAtualizar = [];
     const valores = [];
 
     for (const campo of camposPermitidos) {
-      if (Object.prototype.hasOwnProperty.call(dados, campo)) {
+      if (Object.prototype.hasOwnProperty.call(dados, campo) && colunas.has(campo)) {
         camposParaAtualizar.push(`${campo} = ?`);
         valores.push(dados[campo]);
       }
+    }
+
+    if (colunas.has("data_atualizacao")) {
+      camposParaAtualizar.push("data_atualizacao = NOW()");
     }
 
     if (camposParaAtualizar.length === 0) {
@@ -174,13 +208,65 @@ class ProntuarioRestricoes {
   }
 
   static async concluirRestricao(restricaoId, usuarioId) {
+    const [colunasRows] = await pool.query("SHOW COLUMNS FROM prontuario_restricoes");
+    const colunas = new Set(colunasRows.map((row) => row.Field));
+
+    const [atualRows] = await pool.query(
+      `SELECT status_conclusao FROM prontuario_restricoes WHERE id = ?`,
+      [restricaoId]
+    );
+
+    if (!atualRows || atualRows.length === 0) {
+      return false;
+    }
+
+    const statusAtualNormalizado = String(atualRows[0].status_conclusao || "")
+      .normalize("NFD")
+      .replace(/[\u0300-\u036f]/g, "")
+      .toLowerCase()
+      .trim()
+      .replace(/\s+/g, "_");
+
+    if (statusAtualNormalizado === "concluido") {
+      return false;
+    }
+
+    const updates = [
+      "status_conclusao = 'concluido'",
+    ];
+
+    if (colunas.has("data_conclusao")) {
+      updates.push("data_conclusao = NOW()");
+    }
+
+    if (colunas.has("usuario_conclusao_id")) {
+      updates.push("usuario_conclusao_id = ?");
+    }
+
+    if (colunas.has("usuario_atualizacao")) {
+      updates.push("usuario_atualizacao = ?");
+    }
+
+    if (colunas.has("data_atualizacao")) {
+      updates.push("data_atualizacao = NOW()");
+    }
+
+    const params = [];
+    if (colunas.has("usuario_conclusao_id")) {
+      params.push(usuarioId);
+    }
+
+    if (colunas.has("usuario_atualizacao")) {
+      params.push(usuarioId);
+    }
+
+    params.push(restricaoId);
+
     const [result] = await pool.query(
       `UPDATE prontuario_restricoes
-       SET status_conclusao = 'concluido',
-           data_conclusao = NOW(),
-           usuario_conclusao_id = ?
-       WHERE id = ? AND (status_conclusao IS NULL OR status_conclusao = 'em_andamento')`,
-      [usuarioId, restricaoId]
+       SET ${updates.join(", ")}
+       WHERE id = ?`,
+      params
     );
 
     return result.affectedRows > 0;

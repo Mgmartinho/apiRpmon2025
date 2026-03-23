@@ -1,5 +1,6 @@
 import pool from "../config/mysqlConnect.js";
 import bcrypt from "bcryptjs";
+import ProntuarioMovimentacoes from "./ProntuarioMovimentacao.js";
 
 class Solipede {
   /* ======================================================
@@ -99,6 +100,14 @@ class Solipede {
     const [result] = await pool.query(
       `UPDATE solipede SET status = ? WHERE numero = ?`,
       [status, numero]
+    );
+    return result.affectedRows > 0;
+  }
+
+  static async atualizarAlocacao(numero, alocacao, db = pool) {
+    const [result] = await db.query(
+      `UPDATE solipede SET alocacao = ? WHERE numero = ?`,
+      [alocacao, numero]
     );
     return result.affectedRows > 0;
   }
@@ -458,200 +467,66 @@ class Solipede {
       console.log("   - dataFormatada para MySQL:", dataFormatada);
     }
     
-    for (const numero of numeros) {
-      const dados = dadosAnteriores.get(numero);
-      console.log(`\n   📌 Processando nº ${numero}:`, dados);
-      
-      if (!dados) {
-        console.warn(`   ⚠️ Nenhum dado anterior encontrado para nº ${numero}`);
-        continue;
+    const connection = await pool.getConnection();
+
+    try {
+
+      for (const numero of numeros) {
+        // Normaliza tipo para garantir compatibilidade (string vs number)
+        const dados = dadosAnteriores.get(numero)
+          || dadosAnteriores.get(Number(numero))
+          || dadosAnteriores.get(String(numero));
+        console.log(`\n   📌 Processando nº ${numero}:`, dados);
+
+        if (!dados) {
+          console.warn(`   ⚠️ Nenhum dado anterior encontrado para nº ${numero}`);
+          continue;
+        }
+
+        const alocacaoAnterior = dados.alocacao_anterior || null;
+        const alocacaoNova = novaAlocacao;
+        const motivoFinal = observacaoCustom ? observacaoCustom.trim() : null;
+
+        console.log(`   - alocacaoAnterior: "${alocacaoAnterior}"`);
+        console.log(`   - alocacaoNova: "${alocacaoNova}"`);
+        console.log(`   📄 Motivo: ${motivoFinal}`);
+
+        try {
+          await connection.beginTransaction();
+
+          const [resultProntuario] = await connection.query(
+            `INSERT INTO prontuario_geral (numero_solipede, tipo, usuarioId, data_criacao, data_atualizacao)
+             VALUES (?, 'Movimentação', ?, ?, ?)`,
+            [numero, usuarioId, dataFormatada, dataFormatada]
+          );
+
+          // Usa o mesmo fluxo do lançamento individual para garantir
+          // que tipo_movimentacao, origem, destino_final etc. sejam gravados corretamente
+          await ProntuarioMovimentacoes.criar({
+            prontuario_id: resultProntuario.insertId,
+            usuario_id: usuarioId,
+            tipo_movimentacao: "Movimentacao",
+            motivo: motivoFinal,
+            origem: alocacaoAnterior,
+            destino: alocacaoNova,
+            data_movimentacao: dataFormatada,
+            status_conclusao: "em_andamento",
+          }, connection);
+
+          await connection.commit();
+          console.log(`   ✅ Movimentação registrada! prontuario_id: ${resultProntuario.insertId}`);
+        } catch (e) {
+          await connection.rollback();
+          console.error(`   ❌ Erro ao registrar movimentação no prontuário (${numero}):`, e);
+          throw e;
+        }
       }
-      
-      const alocacaoAnterior = dados.alocacao_anterior || 'Não definida';
-      const alocacaoNova = novaAlocacao;
-      
-      console.log(`   - alocacaoAnterior: "${alocacaoAnterior}"`);
-      console.log(`   - alocacaoNova: "${alocacaoNova}"`);
-      
-      // Monta observação: Alteração de Alocação (com quebras de linha)
-      let observacaoCompleta = `Alocação alterada de "${alocacaoAnterior}" para "${alocacaoNova}"`;
-      if (observacaoCustom) {
-        observacaoCompleta += `\n\nDetalhes: ${observacaoCustom}`;
-      }
-      
-      console.log(`   📄 Observação completa:\n${observacaoCompleta}`);
-      
-      try {
-        console.log(`   🔄 Executando INSERT no prontuário...`);
-        const [result] = await pool.query(
-          `INSERT INTO prontuario (numero_solipede, tipo, observacao, usuarioId, data_criacao, alocacao_anterior, alocacao_nova, origem, destino)
-           VALUES (?, 'Movimentação', ?, ?, ?, ?, ?, ?, ?)`,
-          [numero, observacaoCompleta, usuarioId, dataFormatada, alocacaoAnterior, alocacaoNova, alocacaoAnterior, alocacaoNova]
-        );
-        console.log(`   ✅ Prontuário inserido! insertId: ${result.insertId}, affectedRows: ${result.affectedRows}`);
-        console.log(`   📅 Data usada (formatada): ${dataFormatada}`);
-        
-        // Verifica se realmente foi inserido
-        const [verificacao] = await pool.query(
-          `SELECT id, numero_solipede, tipo, data_criacao, DATE_FORMAT(data_criacao, '%Y-%m-%d %H:%i:%s') as data_formatada FROM prontuario WHERE id = ?`,
-          [result.insertId]
-        );
-        console.log(`   🔍 Verificação do registro inserido:`, verificacao[0]);
-        console.log(`   🔍 data_criacao salvo no banco: ${verificacao[0]?.data_criacao}`);
-        console.log(`   🔍 data_criacao formatado: ${verificacao[0]?.data_formatada}`);
-        
-      } catch (e) {
-        console.error(`   ❌ Erro ao registrar movimentação no prontuário (${numero}):`, e);
-        console.error(`   ❌ SQL Error code:`, e.code);
-        console.error(`   ❌ SQL Error message:`, e.sqlMessage);
-        throw e; // Re-throw para não silenciar o erro
-      }
+    } finally {
+      connection.release();
     }
     console.log("📝 === FIM registrarMovimentacoesProntuario ===\n");
   }
 
-  /* ======================================================
-     PRONTUÁRIO
-  ====================================================== */
-  static async salvarProntuario(dados) {
-    const sql = `
-      INSERT INTO prontuario (
-        numero_solipede, tipo, observacao, diagnosticos, recomendacoes, usuarioId,
-        data_criacao, status_baixa, tipo_baixa, data_lancamento, data_validade, foi_responsavel_pela_baixa, precisa_baixar, origem, destino
-      )
-      VALUES (?, ?, ?, ?, ?, ?, NOW(), ?, ?, ?, ?, ?, ?, ?, ?)
-    `;
-
-    console.log("💾 Model salvarProntuario - dados recebidos:", dados);
-
-    const [resultado] = await pool.query(sql, [
-      dados.numero_solipede,
-      dados.tipo,
-      dados.observacao,
-      dados.diagnosticos || null,
-      dados.recomendacoes,
-      dados.usuario_id || null,
-      dados.status_baixa || null,
-      dados.tipo_baixa || null,
-      dados.data_lancamento || null,
-      dados.data_validade || null,
-      dados.foi_responsavel_pela_baixa || 0,
-      dados.precisa_baixar || null,
-      dados.origem || null,
-      dados.destino || null
-    ]);
-
-    console.log("💾 INSERT executado, insertId:", resultado.insertId);
-    return resultado.insertId;
-  }
-
-  static async listarProntuario(numero) {
-    const sql = `
-      SELECT 
-        p.id, 
-        p.numero_solipede, 
-        p.tipo, 
-        p.observacao,
-        p.diagnosticos,
-        p.recomendacoes, 
-        p.data_criacao,
-        p.data_atualizacao,
-        p.data_validade,
-        p.data_lancamento,
-        p.status_baixa,
-        p.data_liberacao,
-        p.usuario_liberacao_id,
-        p.tipo_baixa,
-        p.status_conclusao,
-        p.data_conclusao,
-        p.usuario_conclusao_id,
-        p.foi_responsavel_pela_baixa,
-        p.precisa_baixar,
-          p.origem,
-          p.destino,
-        p.usuarioId,
-        u.id as usuario_id_check,
-        u.nome as usuario_nome,
-        u.re as usuario_registro,
-        u.perfil as usuario_perfil,
-        u.email as usuario_email,
-        uc.nome as usuario_conclusao_nome,
-        uc.re as usuario_conclusao_registro,
-        ul.nome as usuario_liberacao_nome,
-        ul.re as usuario_liberacao_registro
-      FROM prontuario p
-      LEFT JOIN usuarios u ON p.usuarioId = u.id
-      LEFT JOIN usuarios uc ON p.usuario_conclusao_id = uc.id
-      LEFT JOIN usuarios ul ON p.usuario_liberacao_id = ul.id
-      WHERE p.numero_solipede = ?
-      ORDER BY p.data_criacao DESC
-    `;
-
-    console.log("📖 Query listarProntuario para número:", numero);
-    const [rows] = await pool.query(sql, [numero]);
-    console.log("📖 Total de rows retornadas:", rows.length);
-    
-    // Debug: mostrar campo foi_responsavel_pela_baixa
-    rows.forEach((row, index) => {
-      if (row.tipo === "Tratamento") {
-        console.log(`🔍 Model - Tratamento ${index}:`, {
-          id: row.id,
-          tipo: row.tipo,
-          foi_responsavel_pela_baixa: row.foi_responsavel_pela_baixa,
-          typeof_foi: typeof row.foi_responsavel_pela_baixa
-        });
-      }
-    });
-    
-    return rows;
-  }
-
-  // Listar apenas RESTRIÇÕES (para rota pública)
-  static async listarProntuarioRestricoes(numero) {
-    const sql = `
-      SELECT 
-        p.id, 
-        p.numero_solipede, 
-        p.tipo, 
-        p.observacao, 
-        p.recomendacoes, 
-        p.data_criacao,
-        p.data_validade
-      FROM prontuario p
-      WHERE p.numero_solipede = ? 
-        AND p.tipo = 'restrições'
-        AND (p.status_conclusao IS NULL OR p.status_conclusao != 'concluido')
-        AND (p.data_validade IS NULL OR p.data_validade >= CURDATE())
-      ORDER BY p.data_criacao DESC
-    `;
-
-    console.log("📖 Query listarProntuarioRestricoes para número:", numero);
-    const [rows] = await pool.query(sql, [numero]);
-    console.log("📖 Restrições ATIVAS retornadas:", rows.length);
-    return rows;
-  }
-  
-  static async listarObservacoesGerais(numero) {
-    const sql = `
-      SELECT 
-        p.id, 
-        p.numero_solipede, 
-        p.tipo, 
-        p.observacao, 
-        p.recomendacoes, 
-        p.data_criacao
-      FROM prontuario p
-      WHERE p.numero_solipede = ? 
-        AND p.tipo = 'Observações Comportamentais'
-      ORDER BY p.data_criacao DESC
-    `;
-
-    console.log("📝 Query listarObservacoesGerais para número:", numero);
-    const [rows] = await pool.query(sql, [numero]);
-    console.log("📝 Observações Comportamentais retornadas:", rows.length);
-    return rows;
-  }
-  
   static async listarFerrageamentosPublico() {
     const sql = `
       SELECT 
@@ -673,52 +548,6 @@ class Solipede {
     const [rows] = await pool.query(sql);
     console.log("🔧 Ferrageamentos retornados:", rows.length);
     return rows;
-  }
-
-  static async atualizarProntuario(id, dados) {
-    // Construir UPDATE dinâmico apenas para campos fornecidos
-    const campos = [];
-    const valores = [];
-
-    if (dados.observacao !== undefined) {
-      campos.push('observacao = ?');
-      valores.push(dados.observacao);
-    }
-
-    if (dados.recomendacoes !== undefined) {
-      campos.push('recomendacoes = ?');
-      // Tratar string vazia como null
-      valores.push(dados.recomendacoes && dados.recomendacoes.trim() !== '' ? dados.recomendacoes : null);
-    }
-
-    // Apenas atualizar data_validade se for explicitamente fornecido
-    if (dados.data_validade !== undefined) {
-      campos.push('data_validade = ?');
-      // Tratar string vazia como null
-      valores.push(dados.data_validade && dados.data_validade.trim() !== '' ? dados.data_validade : null);
-    }
-
-    if (campos.length === 0) {
-      throw new Error('Nenhum campo para atualizar');
-    }
-
-    valores.push(id);
-    
-    const sql = `
-      UPDATE prontuario
-      SET ${campos.join(', ')}
-      WHERE id = ?
-    `;
-
-    console.log('📝 UPDATE dinâmico:', sql);
-    console.log('📝 Valores:', valores);
-
-    await pool.query(sql, valores);
-  }
-
-  static async deletarProntuario(id) {
-    const sql = `DELETE FROM prontuario WHERE id = ?`;
-    await pool.query(sql, [id]);
   }
 
   static async buscarHistoricoComUsuario(numero) {
@@ -828,9 +657,50 @@ class Solipede {
       const solipedeExcluidoId = resultSolipede.insertId;
       console.log(`✅ Solípede copiado para solipedes_excluidos (ID: ${solipedeExcluidoId})`);
 
-      // 4. Copiar todos os prontuários para prontuario_excluido
+      const [dietasTables] = await connection.query(`SHOW TABLES LIKE 'prontuario_dietas'`);
+      const [suplementacoesTables] = await connection.query(`SHOW TABLES LIKE 'prontuario_suplementacoes'`);
+      const [movimentacoesTables] = await connection.query(`SHOW TABLES LIKE 'prontuario_movimentacoes'`);
+
+      const tabelaDietas = dietasTables.length > 0 ? "prontuario_dietas" : "prontuario_dieta";
+      const tabelaSuplementacoes = suplementacoesTables.length > 0 ? "prontuario_suplementacoes" : "prontuario_suplementacao";
+      const tabelaMovimentacoes = movimentacoesTables.length > 0 ? "prontuario_movimentacoes" : "prontuario_movimentacao";
+
+      // 4. Copiar todos os prontuários do novo modelo para prontuario_excluido
       const [prontuarios] = await connection.query(
-        "SELECT * FROM prontuario WHERE numero_solipede = ?",
+        `SELECT
+          pg.numero_solipede,
+          pg.tipo,
+          COALESCE(pt.observacao_clinica, pr.restricao, pd.descricao, ps.descricao, pm.motivo) AS observacao,
+          COALESCE(pt.prescricao, pr.recomendacoes) AS recomendacoes,
+          pg.data_criacao,
+          pg.data_atualizacao,
+          pg.usuarioId,
+          NULL AS status_baixa,
+          NULL AS data_liberacao,
+          NULL AS usuario_liberacao_id,
+          NULL AS tipo_baixa,
+          pm.data_movimentacao AS data_lancamento,
+          COALESCE(pr.data_validade, pd.data_fim, ps.data_fim) AS data_validade,
+          COALESCE(pt.status_conclusao, pr.status_conclusao, pd.status_conclusao, ps.status_conclusao, pm.status_conclusao) AS status_conclusao,
+          pt.data_conclusao,
+          pt.usuario_conclusao_id,
+          NULL AS status_anterior,
+          NULL AS status_novo,
+          NULL AS usuario_atualizacao_id,
+          pt.foi_responsavel_pela_baixa,
+          pt.precisa_baixar,
+          NULL AS alocacao_anterior,
+          pm.destino AS alocacao_nova,
+          NULL AS origem,
+          pm.destino AS destino,
+          pg.id AS prontuario_geral_id
+        FROM prontuario_geral pg
+        LEFT JOIN prontuario_tratamentos pt ON pt.prontuario_id = pg.id
+        LEFT JOIN prontuario_restricoes pr ON pr.prontuario_id = pg.id
+        LEFT JOIN ${tabelaDietas} pd ON pd.prontuario_id = pg.id
+        LEFT JOIN ${tabelaSuplementacoes} ps ON ps.prontuario_id = pg.id
+        LEFT JOIN ${tabelaMovimentacoes} pm ON pm.prontuario_id = pg.id
+        WHERE pg.numero_solipede = ?`,
         [numero]
       );
 
@@ -978,10 +848,40 @@ class Solipede {
         console.log(`✅ ${historicoMov.length} movimentações copiadas`);
       }
 
-      // 8. Deletar prontuários da tabela original
+      // 8. Deletar prontuários do novo modelo
       if (prontuarios.length > 0) {
-        await connection.query("DELETE FROM prontuario WHERE numero_solipede = ?", [numero]);
-        console.log(`🗑️ ${prontuarios.length} prontuários deletados da tabela original`);
+        await connection.query(
+          `DELETE pt FROM prontuario_tratamentos pt
+           INNER JOIN prontuario_geral pg ON pg.id = pt.prontuario_id
+           WHERE pg.numero_solipede = ?`,
+          [numero]
+        );
+        await connection.query(
+          `DELETE pr FROM prontuario_restricoes pr
+           INNER JOIN prontuario_geral pg ON pg.id = pr.prontuario_id
+           WHERE pg.numero_solipede = ?`,
+          [numero]
+        );
+        await connection.query(
+          `DELETE pd FROM ${tabelaDietas} pd
+           INNER JOIN prontuario_geral pg ON pg.id = pd.prontuario_id
+           WHERE pg.numero_solipede = ?`,
+          [numero]
+        );
+        await connection.query(
+          `DELETE ps FROM ${tabelaSuplementacoes} ps
+           INNER JOIN prontuario_geral pg ON pg.id = ps.prontuario_id
+           WHERE pg.numero_solipede = ?`,
+          [numero]
+        );
+        await connection.query(
+          `DELETE pm FROM ${tabelaMovimentacoes} pm
+           INNER JOIN prontuario_geral pg ON pg.id = pm.prontuario_id
+           WHERE pg.numero_solipede = ?`,
+          [numero]
+        );
+        await connection.query("DELETE FROM prontuario_geral WHERE numero_solipede = ?", [numero]);
+        console.log(`🗑️ ${prontuarios.length} prontuários deletados do novo modelo`);
       }
 
       // 9. Deletar ferrageamentos da tabela original

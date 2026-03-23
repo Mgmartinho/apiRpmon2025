@@ -1,5 +1,11 @@
 import Solipede from "../models/Solipedes.js";
 import pool from "../config/mysqlConnect.js";
+import NovoProntuario from "../models/NovoProntuario.js";
+import ProntuarioTratamentos from "../models/ProntuarioTratamento.js";
+import ProntuarioRestricoes from "../models/ProntuarioRestricoes.js";
+import ProntuarioDietas from "../models/ProntuarioDietas.js";
+import ProntuarioSuplementacoes from "../models/ProntuarioSuplementacoes.js";
+import ProntuarioMovimentacoes from "../models/ProntuarioMovimentacao.js";
 
 class SolipedeController {
 
@@ -322,15 +328,29 @@ static async adicionarHoras(req, res) {
       console.log("\n🎯 === CONTROLLER movimentacaoEmLote CHAMADO ===");
       console.log("📦 req.body completo:", req.body);
       
-      const { numeros, novaAlocacao, dataMovimentacao, observacao, senha } = req.body;
+      // Aceita tanto o padrão novo (destino, motivo, data_movimentacao) quanto o legado
+      const {
+        numeros,
+        destino,
+        novaAlocacao,
+        data_movimentacao,
+        dataMovimentacao,
+        motivo,
+        observacao,
+        senha
+      } = req.body;
+
+      const novaAlocacaoFinal = destino || novaAlocacao;
+      const dataFinal = data_movimentacao || dataMovimentacao;
+      const motivoFinal = motivo || observacao || null;
+
       const usuario = req.usuario;
 
       console.log("📥 Dados extraídos do body:");
       console.log("   - numeros:", numeros);
-      console.log("   - novaAlocacao:", novaAlocacao);
-      console.log("   - tipo novaAlocacao:", typeof novaAlocacao);
-      console.log("   - dataMovimentacao:", dataMovimentacao);
-      console.log("   - observacao:", observacao);
+      console.log("   - novaAlocacaoFinal:", novaAlocacaoFinal);
+      console.log("   - dataFinal:", dataFinal);
+      console.log("   - motivoFinal:", motivoFinal);
       console.log("   - senha:", senha ? "****" : "não informada");
       console.log("   - usuario:", usuario);
 
@@ -342,9 +362,13 @@ static async adicionarHoras(req, res) {
         console.log("❌ Seleção de solípedes vazia");
         return res.status(400).json({ error: "Seleção de solípedes vazia" });
       }
-      if (!novaAlocacao || novaAlocacao === "") {
-        console.log("❌ Nova alocação é obrigatória");
-        return res.status(400).json({ error: "Nova alocação é obrigatória" });
+      if (!novaAlocacaoFinal || novaAlocacaoFinal === "") {
+        console.log("❌ Destino é obrigatório");
+        return res.status(400).json({ error: "Destino é obrigatório" });
+      }
+      if (!motivoFinal || !motivoFinal.trim()) {
+        console.log("❌ Motivo é obrigatório");
+        return res.status(400).json({ error: "Motivo da movimentação é obrigatório" });
       }
       if (!senha) {
         console.log("❌ Senha é obrigatória");
@@ -358,29 +382,21 @@ static async adicionarHoras(req, res) {
       console.log("🔄 Chamando atualizarMovimentacaoEmLote...");
       const dadosAnteriores = await Solipede.atualizarMovimentacaoEmLote(
         numeros,
-        novaAlocacao
+        novaAlocacaoFinal
       );
       console.log("✅ atualizarMovimentacaoEmLote retornou:", dadosAnteriores);
       
       console.log("📝 Chamando registrarMovimentacoesProntuario...");
-      console.log("   - numeros:", numeros);
-      console.log("   - dadosAnteriores size:", dadosAnteriores.size);
-      console.log("   - novaAlocacao:", novaAlocacao);
-      console.log("   - dataMovimentacao:", dataMovimentacao);
-      console.log("   - observacao:", observacao);
-      console.log("   - usuario.id:", usuario.id);
-      
       await Solipede.registrarMovimentacoesProntuario(
         numeros,
         dadosAnteriores,
-        novaAlocacao,
-        dataMovimentacao,
-        observacao,
+        novaAlocacaoFinal,
+        dataFinal,
+        motivoFinal,
         usuario.id
       );
       
       console.log("✅ registrarMovimentacoesProntuario concluído!");
-
       console.log("✅ Movimentação concluída com sucesso!");
       console.log("🎯 === FIM CONTROLLER ===\n");
       return res.status(200).json({ success: true, count: numeros.length });
@@ -469,31 +485,91 @@ static async adicionarHoras(req, res) {
       console.log("   📊 Resultado da análise:", { deveBaixarSolipede, foiResponsavelPelaBaixa });
       console.log("   Salvando prontuário com usuarioId:", usuarioId);
 
-      const resultado = await Solipede.salvarProntuario({
-        numero_solipede,
-        tipo: tipo || "Observação Geral",
-        observacao,
-        diagnosticos: diagnosticos || null,
-        recomendacoes: recomendacoes || null,
-        usuario_id: usuarioId || null,
-        tipo_baixa: tipo_baixa || null,
-        data_lancamento: data_lancamento || null,
-        data_validade: data_validade || null,
-        foi_responsavel_pela_baixa: foiResponsavelPelaBaixa,
-        precisa_baixar: tipo === "Tratamento" ? precisa_baixar : null, // Salvar valor original
-        status_baixa: tipo === "Baixa" ? "pendente" : null,
-        origem: origem || null,
-        destino: destino || null,
-      });
+      const tiposSemEquivalenciaNoNovoModelo = ["Baixa", "Observação Geral", "Observações Comportamentais", "Exame"];
 
-      // Se for tipo "Baixa", atualizar status do solípede
-      if (tipo === "Baixa") {
-        const novoStatusBaixa = tipo_baixa === "Baixa Eterna" 
-          ? "Baixado - Baixa Eterna" 
-          : "Baixado";
-        
-        await Solipede.atualizarStatus(numero_solipede, novoStatusBaixa, usuarioId);
-        console.log(`✅ Status do solípede ${numero_solipede} atualizado para: ${novoStatusBaixa}`);
+      if (tiposSemEquivalenciaNoNovoModelo.includes(tipo)) {
+        return res.status(410).json({
+          error: `O tipo '${tipo}' não possui tabela equivalente no novo modelo e não pode mais ser salvo pela API legada.`
+        });
+      }
+
+      const connection = await pool.getConnection();
+      let prontuarioId;
+
+      try {
+        await connection.beginTransaction();
+
+        const [resultProntuario] = await connection.query(
+          `INSERT INTO prontuario_geral (numero_solipede, tipo, usuarioId, data_criacao, data_atualizacao)
+           VALUES (?, ?, ?, NOW(), NOW())`,
+          [numero_solipede, tipo || "Observação Geral", usuarioId || null]
+        );
+
+        prontuarioId = resultProntuario.insertId;
+
+        if (tipo === "Tratamento") {
+          await ProntuarioTratamentos.criar({
+            prontuario_id: prontuarioId,
+            diagnostico: diagnosticos || null,
+            observacao_clinica: observacao,
+            prescricao: recomendacoes || null,
+            usuario_id: usuarioId || null,
+            precisa_baixar: precisa_baixar || "nao",
+            foi_responsavel_pela_baixa: foiResponsavelPelaBaixa,
+          }, connection);
+        } else if (tipo === "Restrições") {
+          await ProntuarioRestricoes.criar({
+            prontuario_id: prontuarioId,
+            usuario_id: usuarioId || null,
+            restricao: observacao,
+            recomendacoes: recomendacoes || null,
+            data_validade: data_validade || null,
+            status_conclusao: "em_andamento",
+          }, connection);
+        } else if (tipo === "Dieta") {
+          await ProntuarioDietas.criar({
+            prontuario_id: prontuarioId,
+            usuario_id: usuarioId || null,
+            tipo_dieta: null,
+            descricao: observacao,
+            data_fim: data_validade || null,
+            status_conclusao: "em_andamento",
+          }, connection);
+        } else if (tipo === "Suplementação") {
+          const produtoMatch = observacao?.match(/Produto:\s*(.*)/i);
+          const doseMatch = observacao?.match(/Dose:\s*(.*)/i);
+          const frequenciaMatch = observacao?.match(/Frequ[êe]ncia:\s*(.*)/i);
+
+          await ProntuarioSuplementacoes.criar({
+            prontuario_id: prontuarioId,
+            usuario_id: usuarioId || null,
+            produto: produtoMatch?.[1]?.trim() || null,
+            dose: doseMatch?.[1]?.trim() || null,
+            frequencia: frequenciaMatch?.[1]?.trim() || null,
+            descricao: observacao,
+            data_fim: data_validade || null,
+            status_conclusao: "em_andamento",
+          }, connection);
+        } else if (tipo === "Movimentação") {
+          await ProntuarioMovimentacoes.criar({
+            prontuario_id: prontuarioId,
+            usuario_id: usuarioId || null,
+            motivo: observacao || null,
+            destino: destino || null,
+            data_movimentacao: data_lancamento || null,
+            status_conclusao: "em_andamento",
+          }, connection);
+        } else {
+          await connection.rollback();
+          return res.status(400).json({ error: `Tipo '${tipo}' não suportado no novo modelo.` });
+        }
+
+        await connection.commit();
+      } catch (error) {
+        await connection.rollback();
+        throw error;
+      } finally {
+        connection.release();
       }
       
       // Se for tratamento que precisa baixar, atualizar status do solípede
@@ -512,21 +588,11 @@ static async adicionarHoras(req, res) {
         console.log("   ℹ️ Tratamento não irá baixar o solípede (precisa_baixar='nao')");
       }
 
-      console.log("✅ Prontuário salvo com sucesso! ID:", resultado);
-      
-      // Verificar o registro salvo
-      if (tipo === "Tratamento") {
-        console.log("🔍 Verificando registro de tratamento salvo...");
-        const [registroSalvo] = await pool.query(
-          "SELECT id, tipo, foi_responsavel_pela_baixa FROM prontuario WHERE id = ?",
-          [resultado]
-        );
-        console.log("📝 Registro salvo no banco:", registroSalvo[0]);
-      }
+      console.log("✅ Prontuário salvo com sucesso! ID:", prontuarioId);
 
       res.status(201).json({ 
         success: true, 
-        id: resultado,
+        id: prontuarioId,
         usuario_id: usuarioId,
         message: "Prontuário salvo com sucesso" 
       });
@@ -540,22 +606,8 @@ static async adicionarHoras(req, res) {
     try {
       const { numero } = req.params;
       console.log("📖 Listando prontuário para número:", numero);
-      const prontuarios = await Solipede.listarProntuario(numero);
+      const prontuarios = await NovoProntuario.listarPorSolipede(numero);
       console.log("📖 Prontuários retornados:", prontuarios.length, "registros");
-      
-      // Debug: verificar campos foi_responsavel_pela_baixa E precisa_baixar nos tratamentos
-      prontuarios.forEach((p, index) => {
-        if (p.tipo === "Tratamento") {
-          console.log(`🩺 Controller - Tratamento ${index}:`, {
-            id: p.id,
-            tipo: p.tipo,
-            foi_responsavel_pela_baixa: p.foi_responsavel_pela_baixa,
-            precisa_baixar: p.precisa_baixar,
-            typeof_precisa: typeof p.precisa_baixar,
-            observacao: p.observacao?.substring(0, 50)
-          });
-        }
-      });
       
       res.status(200).json(prontuarios);
     } catch (err) {
@@ -569,7 +621,8 @@ static async adicionarHoras(req, res) {
     try {
       const { numero } = req.params;
       console.log("📖 Listando RESTRIÇÕES para número:", numero);
-      const restricoes = await Solipede.listarProntuarioRestricoes(numero);
+      const ProntuarioRestricoes = (await import("../models/ProntuarioRestricoes.js")).default;
+      const restricoes = await ProntuarioRestricoes.listarPorSolipedeNumero(numero);
       console.log("📖 Restrições retornadas:", restricoes.length);
       res.status(200).json(restricoes);
     } catch (err) {
@@ -581,11 +634,9 @@ static async adicionarHoras(req, res) {
   // Rota pública - observações gerais (exceto restrições)
   static async listarObservacoesGerais(req, res) {
     try {
-      const { numero } = req.params;
-      console.log("📝 Listando OBSERVAÇÕES GERAIS para número:", numero);
-      const observacoes = await Solipede.listarObservacoesGerais(numero);
-      console.log("📝 Observações retornadas:", observacoes.length);
-      res.status(200).json(observacoes);
+      return res.status(410).json({
+        error: "O endpoint de observações gerais foi descontinuado porque não possui equivalente no modelo prontuario_geral."
+      });
     } catch (err) {
       console.error("Erro ao listar observações:", err);
       res.status(500).json({ error: "Erro ao listar observações" });
@@ -606,82 +657,15 @@ static async adicionarHoras(req, res) {
   }
 
   static async atualizarProntuario(req, res) {
-    try {
-      const { id } = req.params;
-      const {
-        observacao,
-        diagnosticos,
-        recomendacoes,
-        data_validade,
-        precisa_baixar,
-        foi_responsavel_pela_baixa,
-        tipo_baixa,
-        data_lancamento,
-        status_baixa,
-        data_liberacao,
-        usuario_liberacao_id,
-        origem,
-        destino,
-        alocacao_anterior,
-        alocacao_nova,
-      } = req.body;
-      const usuarioId = req.usuario?.id;
-
-      console.log("═".repeat(60));
-      console.log("✏️  ATUALIZANDO PRONTUÁRIO");
-      console.log("ID:", id);
-      console.log("Usuário ID:", usuarioId);
-      console.log("Dados recebidos:", JSON.stringify(req.body, null, 2));
-      console.log("═".repeat(60));
-
-      if (!usuarioId) {
-        return res.status(401).json({ error: "Usuário não autenticado" });
-      }
-
-      if (!observacao) {
-        return res.status(400).json({ error: "Observação é obrigatória" });
-      }
-
-      // Usar função de auditoria do modelo Prontuario
-      const Prontuario = (await import("../models/Prontuario.js")).default;
-      await Prontuario.atualizarComAuditoria(
-        id,
-        {
-          observacao,
-          diagnosticos,
-          recomendacoes,
-          data_validade,
-          precisa_baixar,
-          foi_responsavel_pela_baixa,
-          tipo_baixa,
-          data_lancamento,
-          status_baixa,
-          data_liberacao,
-          usuario_liberacao_id,
-          origem,
-          destino,
-          alocacao_anterior,
-          alocacao_nova,
-        },
-        usuarioId
-      );
-      
-      res.status(200).json({ success: true, message: "Prontuário atualizado com sucesso" });
-    } catch (err) {
-      console.error("❌ Erro ao atualizar prontuário:", err);
-      res.status(500).json({ error: "Erro ao atualizar prontuário" });
-    }
+    return res.status(410).json({
+      error: "Rota legada descontinuada. Use /gestaoFVR/prontuario/:id para operações do novo modelo."
+    });
   }
 
   static async deletarProntuario(req, res) {
-    try {
-      const { id } = req.params;
-      await Solipede.deletarProntuario(id);
-      res.status(200).json({ success: true, message: "Prontuário deletado com sucesso" });
-    } catch (err) {
-      console.error("Erro ao deletar prontuário:", err);
-      res.status(500).json({ error: "Erro ao deletar prontuário" });
-    }
+    return res.status(410).json({
+      error: "Rota legada descontinuada. Use /gestaoFVR/prontuario/:id/excluir para exclusão no novo modelo."
+    });
   }
 
   /* ======================================================

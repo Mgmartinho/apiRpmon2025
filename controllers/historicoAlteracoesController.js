@@ -17,7 +17,7 @@ class HistoricoAlteracoesController {
   static async listarPorProntuario(req, res, next) {
     try {
       const { id } = req.params;
-      const historico = await HistoricoAlteracoes.listarPorRegistro('prontuario', id);
+      const historico = await HistoricoAlteracoes.listarPorRegistro('prontuario_geral', id);
       
       res.json(historico);
     } catch (err) {

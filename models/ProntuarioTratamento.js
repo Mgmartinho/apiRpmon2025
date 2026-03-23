@@ -140,6 +140,41 @@ static async criar(dados, db = pool) {
     return result.affectedRows > 0;
   }
 
+  static async atualizarParcial(id, dados) {
+    const camposPermitidos = ["diagnostico", "observacao_clinica", "prescricao", "precisa_baixar", "foi_responsavel_pela_baixa", "status_conclusao", "usuario_atualizacao"];
+    const camposParaAtualizar = [];
+    const valores = [];
+
+    for (const campo of camposPermitidos) {
+      if (Object.prototype.hasOwnProperty.call(dados, campo)) {
+        camposParaAtualizar.push(`${campo} = ?`);
+        valores.push(dados[campo]);
+      }
+    }
+
+    if (camposParaAtualizar.length === 0) {
+      throw new Error("Nenhum campo válido para atualização");
+    }
+
+    // Garante carimbo de auditoria mesmo quando apenas metadados mudam.
+    camposParaAtualizar.push("data_atualizacao = NOW()");
+
+    valores.push(id);
+
+    const [result] = await pool.query(
+      `UPDATE prontuario_tratamentos
+       SET ${camposParaAtualizar.join(", ")}
+       WHERE id = ?`,
+      valores
+    );
+
+    if (result.affectedRows === 0) {
+      return null;
+    }
+
+    return this.buscarPorId(id);
+  }
+
   static async excluir(id) {
     const [result] = await pool.query(
       `DELETE FROM prontuario_tratamentos WHERE id = ?`,

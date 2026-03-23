@@ -1,8 +1,49 @@
-import Prontuario from "../models/Prontuario.js";
+import NovoProntuario from "../models/NovoProntuario.js";
+import ProntuarioTratamentos from "../models/ProntuarioTratamento.js";
+import ProntuarioRestricoes from "../models/ProntuarioRestricoes.js";
+import ProntuarioDietas from "../models/ProntuarioDietas.js";
+import ProntuarioSuplementacoes from "../models/ProntuarioSuplementacoes.js";
+import ProntuarioMovimentacoes from "../models/ProntuarioMovimentacao.js";
+import ProntuarioVacinacao from "../models/ProntuarioVacinacao.js";
 import Solipede from "../models/Solipedes.js";
 import bcrypt from "bcryptjs";
 
 class ProntuarioController {
+  static normalizarTipo(tipo) {
+    return String(tipo || "")
+      .normalize("NFD")
+      .replace(/[\u0300-\u036f]/g, "")
+      .toLowerCase()
+      .trim();
+  }
+
+  static ehTipo(tipoAtual, tipoEsperado) {
+    return this.normalizarTipo(tipoAtual) === this.normalizarTipo(tipoEsperado);
+  }
+
+  static async validarSenhaUsuario(usuarioLogado, senha) {
+    const pool = (await import("../config/mysqlConnect.js")).default;
+    const [usuarios] = await pool.query(
+      "SELECT id, nome, re, senha FROM usuarios WHERE id = ?",
+      [usuarioLogado.id]
+    );
+
+    if (!usuarios || usuarios.length === 0) {
+      throw new Error("Usuário não encontrado");
+    }
+
+    const usuario = usuarios[0];
+    const senhaValida = await bcrypt.compare(senha, usuario.senha);
+
+    if (!senhaValida) {
+      const erro = new Error("Senha inválida");
+      erro.status = 401;
+      throw erro;
+    }
+
+    return usuario;
+  }
+
   static async listarTodos(req, res, next) {
     console.log("\n");
     console.log("═".repeat(80));
@@ -11,8 +52,8 @@ class ProntuarioController {
     console.log("═".repeat(80));
     console.log("\n");
     try {
-      console.log("🔍 Executando Prontuario.listarTodos() no banco...");
-      const dados = await Prontuario.listarTodos();
+      console.log("🔍 Executando NovoProntuario.listarTodos() no banco...");
+      const dados = await NovoProntuario.listarTodos();
       console.log(`✅ Total de registros encontrados: ${dados.length}`);
       if (dados.length > 0) {
         console.log("📦 Exemplo do primeiro registro:", JSON.stringify(dados[0], null, 2));
@@ -47,7 +88,7 @@ class ProntuarioController {
     try {
       const { numero_solipede } = req.params;
       console.log(`🔍 Buscando prontuários do solípede: ${numero_solipede}`);
-      const dados = await Prontuario.listarPorSolipede(numero_solipede);
+      const dados = await NovoProntuario.listarPorSolipede(numero_solipede);
       console.log(`✅ Total de registros encontrados: ${dados.length}\n`);
       res.status(200).json(dados);
     } catch (err) {
@@ -58,7 +99,8 @@ class ProntuarioController {
   static async contarBaixasPendentes(req, res, next) {
     try {
       const { numero_solipede } = req.params;
-      const total = await Prontuario.contarBaixasPendentes(numero_solipede);
+      const dados = await NovoProntuario.listarPorSolipede(numero_solipede);
+      const total = dados.filter((registro) => registro.tipo === "Tratamento" && registro.tratamento_precisa_baixar === "sim" && (!registro.status_conclusao || registro.status_conclusao === "em_andamento")).length;
       res.status(200).json({ total });
     } catch (err) {
       next(err);
@@ -67,45 +109,8 @@ class ProntuarioController {
 
   static async liberarBaixa(req, res, next) {
     try {
-      const { id } = req.params;
-      const usuarioId = req.user?.id || req.usuario?.id;
-
-      if (!usuarioId) {
-        return res.status(401).json({ error: "Usuário não autenticado" });
-      }
-
-      // Buscar número do solípede através do prontuário
-      const pool = (await import("../config/mysqlConnect.js")).default;
-      const [rows] = await pool.query(
-        "SELECT numero_solipede FROM prontuario WHERE id = ? AND tipo = 'Baixa'",
-        [id]
-      );
-
-      if (!rows || rows.length === 0) {
-        return res.status(404).json({ error: "Registro de baixa não encontrado" });
-      }
-
-      const numeroSolipede = rows[0].numero_solipede;
-
-      // Liberar a baixa
-      const liberado = await Prontuario.liberarBaixa(id, usuarioId);
-
-      if (!liberado) {
-        return res.status(400).json({ error: "Não foi possível liberar a baixa" });
-      }
-
-      // Verificar se ainda existem baixas pendentes
-      const baixasPendentes = await Prontuario.contarBaixasPendentes(numeroSolipede);
-
-      // Se não há mais baixas pendentes, voltar status para Ativo
-      if (baixasPendentes === 0) {
-        await Solipede.atualizarStatus(numeroSolipede, "Ativo");
-      }
-
-      res.status(200).json({ 
-        success: true, 
-        message: "Baixa liberada com sucesso",
-        baixasPendentes 
+      return res.status(410).json({
+        error: "Fluxo de baixa legado descontinuado no novo modelo de prontuário"
       });
     } catch (err) {
       next(err);
@@ -115,7 +120,8 @@ class ProntuarioController {
   static async contarTratamentosEmAndamento(req, res, next) {
     try {
       const { numero } = req.params;
-      const total = await Prontuario.contarTratamentosEmAndamento(numero);
+      const dados = await NovoProntuario.listarPorSolipede(numero);
+      const total = dados.filter((registro) => registro.tipo === "Tratamento" && (registro.status_conclusao === null || registro.status_conclusao === undefined || registro.status_conclusao === "" || registro.status_conclusao === "em_andamento")).length;
       res.status(200).json({ total });
     } catch (err) {
       next(err);
@@ -140,55 +146,22 @@ class ProntuarioController {
         return res.status(401).json({ error: "Usuário não autenticado" });
       }
 
-      // Buscar senha do usuário logado para validar
-      const pool = (await import("../config/mysqlConnect.js")).default;
-      const [usuarios] = await pool.query(
-        "SELECT id, nome, re, senha FROM usuarios WHERE id = ?",
-        [usuarioLogado.id]
-      );
+      const usuario = await ProntuarioController.validarSenhaUsuario(usuarioLogado, senha);
+      const registro = await NovoProntuario.buscarPorId(id);
 
-      if (!usuarios || usuarios.length === 0) {
-        console.log(`❌ Usuário não encontrado no banco: ${usuarioLogado.id}`);
-        return res.status(401).json({ error: "Usuário não encontrado" });
-      }
-
-      const usuario = usuarios[0];
-      console.log(`✅ Validando senha para: ${usuario.nome}`);
-      
-      const senhaValida = await bcrypt.compare(senha, usuario.senha);
-
-      if (!senhaValida) {
-        console.log("❌ Senha inválida");
-        return res.status(401).json({ error: "Senha inválida" });
-      }
-
-      console.log("✅ Senha válida");
-
-      // Buscar o número do solípede antes de concluir
-      const [tratamentos] = await pool.query(
-        "SELECT numero_solipede FROM prontuario WHERE id = ?",
-        [id]
-      );
-
-      if (!tratamentos || tratamentos.length === 0) {
+      if (!registro || registro.tipo !== "Tratamento" || !registro.tratamento_id) {
         console.log(`❌ Tratamento não encontrado - ID: ${id}`);
         return res.status(404).json({ error: "Tratamento não encontrado" });
       }
 
-      const numeroSolipede = tratamentos[0].numero_solipede;
+      const numeroSolipede = registro.numero_solipede;
       console.log(`🐴 Solípede: ${numeroSolipede}`);
 
-      // Verificar se este tratamento foi responsável por baixar o solípede
-      const [tratamentoInfo] = await pool.query(
-        "SELECT foi_responsavel_pela_baixa FROM prontuario WHERE id = ?",
-        [id]
-      );
-
-      const foiResponsavelPelaBaixa = tratamentoInfo && tratamentoInfo.length > 0 && tratamentoInfo[0].foi_responsavel_pela_baixa === 1;
+      const foiResponsavelPelaBaixa = registro.foi_responsavel_pela_baixa === 1;
       console.log(`📋 Tratamento ${id} foi responsável pela baixa? ${foiResponsavelPelaBaixa ? 'SIM' : 'NÃO'}`);
 
       // Concluir o tratamento
-      const concluido = await Prontuario.concluirTratamento(id, usuario.id);
+      const concluido = await ProntuarioTratamentos.atualizarStatus(registro.tratamento_id, "concluido", usuario.id);
 
       if (!concluido) {
         console.log(`⚠️ Tratamento ${id} já estava concluído anteriormente`);
@@ -201,24 +174,13 @@ class ProntuarioController {
       console.log(`✅ Tratamento ${id} concluído por ${usuario.nome}`);
 
       // Verificar quantos tratamentos QUE BAIXARAM ainda estão em andamento
-      const [tratamentosComBaixaAtivos] = await pool.query(
-        `SELECT COUNT(*) as total FROM prontuario 
-         WHERE numero_solipede = ? 
-         AND tipo = 'Tratamento' 
-         AND foi_responsavel_pela_baixa = 1
-         AND (status_conclusao IS NULL OR status_conclusao = 'em_andamento')`,
-        [numeroSolipede]
-      );
-      
-      const tratamentosQueBaixaramRestantes = tratamentosComBaixaAtivos[0].total;
+      const registrosSolipede = await NovoProntuario.listarPorSolipede(numeroSolipede);
+      const tratamentosQueBaixaramRestantes = registrosSolipede.filter((item) => item.tipo === "Tratamento" && item.foi_responsavel_pela_baixa === 1 && (!item.status_conclusao || item.status_conclusao === "em_andamento")).length;
       console.log(`📊 Tratamentos que baixaram o solípede e ainda estão ativos: ${tratamentosQueBaixaramRestantes}`);
 
       // Buscar o status atual do solípede
-      const Solipede = (await import("../models/Solipedes.js")).default;
-      const [solipedes] = await pool.query(
-        "SELECT status FROM solipede WHERE numero = ?",
-        [numeroSolipede]
-      );
+      const pool = (await import("../config/mysqlConnect.js")).default;
+      const [solipedes] = await pool.query("SELECT status FROM solipede WHERE numero = ?", [numeroSolipede]);
 
       let statusAlterado = false;
       if (solipedes && solipedes.length > 0) {
@@ -264,7 +226,7 @@ class ProntuarioController {
   static async concluirRegistro(req, res, next) {
     try {
       const { id } = req.params;
-      const { senha } = req.body;
+      const { senha, movimentacao_retorno, movimentacao_nova_alocacao } = req.body;
       const usuarioLogado = req.usuario; // Pega do token JWT via authMiddleware
 
       console.log(`🔐 Tentativa de conclusão de registro - ID: ${id}, Usuário: ${usuarioLogado?.nome} (${usuarioLogado?.email})`);
@@ -279,32 +241,65 @@ class ProntuarioController {
         return res.status(401).json({ error: "Usuário não autenticado" });
       }
 
-      // Buscar senha do usuário logado para validar
-      const pool = (await import("../config/mysqlConnect.js")).default;
-      const [usuarios] = await pool.query(
-        "SELECT id, nome, re, senha FROM usuarios WHERE id = ?",
-        [usuarioLogado.id]
-      );
+      const usuario = await ProntuarioController.validarSenhaUsuario(usuarioLogado, senha);
+      const registro = await NovoProntuario.buscarPorId(id);
 
-      if (!usuarios || usuarios.length === 0) {
-        console.log(`❌ Usuário não encontrado no banco: ${usuarioLogado.id}`);
-        return res.status(401).json({ error: "Usuário não encontrado" });
+      if (!registro) {
+        return res.status(404).json({ error: "Registro não encontrado" });
       }
 
-      const usuario = usuarios[0];
-      console.log(`✅ Validando senha para: ${usuario.nome}`);
-      
-      const senhaValida = await bcrypt.compare(senha, usuario.senha);
+      let concluido = false;
 
-      if (!senhaValida) {
-        console.log("❌ Senha inválida");
-        return res.status(401).json({ error: "Senha inválida" });
+      if (ProntuarioController.ehTipo(registro.tipo, "Tratamento") && registro.tratamento_id) {
+        concluido = await ProntuarioTratamentos.atualizarStatus(registro.tratamento_id, "concluido", usuario.id);
+      } else if (ProntuarioController.ehTipo(registro.tipo, "Restrições") && registro.restricao_id) {
+        concluido = await ProntuarioRestricoes.concluirRestricao(registro.restricao_id, usuario.id);
+      } else if (ProntuarioController.ehTipo(registro.tipo, "Dieta") && registro.dieta_id) {
+        concluido = !!(await ProntuarioDietas.atualizarParcial(registro.dieta_id, { status_conclusao: "concluido" }));
+      } else if (ProntuarioController.ehTipo(registro.tipo, "Suplementação") && registro.suplementacao_id) {
+        concluido = !!(await ProntuarioSuplementacoes.atualizarParcial(registro.suplementacao_id, { status_conclusao: "concluido" }));
+      } else if (ProntuarioController.ehTipo(registro.tipo, "Movimentação") && registro.movimentacao_id) {
+        const movimentacao = await ProntuarioMovimentacoes.buscarPorId(registro.movimentacao_id);
+
+        if (!movimentacao) {
+          return res.status(404).json({ error: "Movimentação não encontrada" });
+        }
+
+        const retornoNormalizado = String(movimentacao_retorno || "")
+          .normalize("NFD")
+          .replace(/[\u0300-\u036f]/g, "")
+          .toLowerCase()
+          .trim();
+
+        let alocacaoFinal = null;
+        if (retornoNormalizado === "origem") {
+          alocacaoFinal = movimentacao.origem || null;
+        } else if (retornoNormalizado === "outra") {
+          alocacaoFinal = String(movimentacao_nova_alocacao || "").trim() || null;
+        }
+
+        if (!alocacaoFinal) {
+          return res.status(400).json({
+            error: "Informe a alocação final da movimentação (origem ou nova alocação)."
+          });
+        }
+
+        concluido = !!(await ProntuarioMovimentacoes.atualizarParcial(registro.movimentacao_id, {
+          status_conclusao: "concluido",
+          destino_final: alocacaoFinal,
+          usuario_conclusao_id: usuario.id,
+          usuario_atualizacao: usuario.id,
+        }));
+
+        if (concluido) {
+          await Solipede.atualizarAlocacao(registro.numero_solipede, alocacaoFinal);
+        }
+      } else if (ProntuarioController.ehTipo(registro.tipo, "Vacinação") && registro.vacinacao_id) {
+        concluido = !!(await ProntuarioVacinacao.atualizarParcial(registro.vacinacao_id, { 
+          status_conclusao: "concluido",
+          usuario_atualizacao: usuario.id,
+        }));
       }
-
-      console.log("✅ Senha válida");
-
-      // Concluir o registro
-      const concluido = await Prontuario.concluirRegistro(id, usuario.id);
 
       if (!concluido) {
         console.log(`⚠️ Registro ${id} já estava concluído anteriormente`);
@@ -350,70 +345,47 @@ class ProntuarioController {
         return res.status(401).json({ error: "Usuário não autenticado" });
       }
 
-      // Buscar senha do usuário logado para validar
-      const pool = (await import("../config/mysqlConnect.js")).default;
-      const [usuarios] = await pool.query(
-        "SELECT id, nome, re, senha FROM usuarios WHERE id = ?",
-        [usuarioLogado.id]
-      );
+      const usuario = await ProntuarioController.validarSenhaUsuario(usuarioLogado, senha);
+      const registro = await NovoProntuario.buscarPorId(id);
 
-      if (!usuarios || usuarios.length === 0) {
-        console.log(`❌ Usuário não encontrado no banco: ${usuarioLogado.id}`);
-        return res.status(401).json({ error: "Usuário não encontrado" });
-      }
-
-      const usuario = usuarios[0];
-      console.log(`✅ Validando senha para: ${usuario.nome}`);
-      
-      const senhaValida = await bcrypt.compare(senha, usuario.senha);
-
-      if (!senhaValida) {
-        console.log("❌ Senha inválida");
-        return res.status(401).json({ error: "Senha inválida" });
-      }
-
-      console.log("✅ Senha válida");
-
-      // Buscar informações do registro antes de excluir
-      const [registros] = await pool.query(
-        "SELECT numero_solipede, tipo, precisa_baixar FROM prontuario WHERE id = ?",
-        [id]
-      );
-
-      if (!registros || registros.length === 0) {
+      if (!registro) {
         console.log(`❌ Registro ${id} não encontrado`);
         return res.status(404).json({ error: "Registro não encontrado" });
       }
 
-      const registro = registros[0];
       const numeroSolipede = registro.numero_solipede;
       const tipo = registro.tipo;
-      const precisaBaixar = registro.precisa_baixar;
+      const precisaBaixar = registro.tratamento_precisa_baixar;
 
       console.log(`📋 Registro a ser excluído: Tipo=${tipo}, Solípede=${numeroSolipede}, PrecisaBaixar=${precisaBaixar}`);
 
-      // Excluir o registro
-      const excluido = await Prontuario.excluir(id);
+      let excluido = false;
+
+      if (ProntuarioController.ehTipo(tipo, "Tratamento") && registro.tratamento_id) {
+        excluido = await ProntuarioTratamentos.excluir(registro.tratamento_id);
+      } else if (ProntuarioController.ehTipo(tipo, "Restrições") && registro.restricao_id) {
+        excluido = await ProntuarioRestricoes.excluir(registro.restricao_id);
+      } else if (ProntuarioController.ehTipo(tipo, "Dieta") && registro.dieta_id) {
+        excluido = await ProntuarioDietas.excluir(registro.dieta_id);
+      } else if (ProntuarioController.ehTipo(tipo, "Suplementação") && registro.suplementacao_id) {
+        excluido = await ProntuarioSuplementacoes.excluir(registro.suplementacao_id);
+      } else if (ProntuarioController.ehTipo(tipo, "Movimentação") && registro.movimentacao_id) {
+        excluido = await ProntuarioMovimentacoes.excluir(registro.movimentacao_id);
+      }
 
       if (!excluido) {
         console.log(`❌ Erro ao excluir registro ${id}`);
         return res.status(500).json({ error: "Erro ao excluir registro" });
       }
 
+      await NovoProntuario.excluirProntuarioGeral(id);
+
       console.log(`✅ Registro ${id} excluído por ${usuario.nome}`);
 
       // Se era um tratamento que baixou o solípede, verificar se deve voltar para Ativo
       if (tipo === "Tratamento" && precisaBaixar === "sim") {
-        const [tratamentosComBaixaAtivos] = await pool.query(
-          `SELECT COUNT(*) as total FROM prontuario 
-           WHERE numero_solipede = ? 
-           AND tipo = 'Tratamento' 
-           AND precisa_baixar = 'sim'
-           AND (status_conclusao IS NULL OR status_conclusao = 'em_andamento')`,
-          [numeroSolipede]
-        );
-        
-        const tratamentosQueBaixaramRestantes = tratamentosComBaixaAtivos[0].total;
+        const registrosSolipede = await NovoProntuario.listarPorSolipede(numeroSolipede);
+        const tratamentosQueBaixaramRestantes = registrosSolipede.filter((item) => item.tipo === "Tratamento" && item.tratamento_precisa_baixar === "sim" && (!item.status_conclusao || item.status_conclusao === "em_andamento")).length;
         console.log(`📊 Tratamentos que baixam o solípede restantes: ${tratamentosQueBaixaramRestantes}`);
 
         // Se não há mais tratamentos que baixaram, retornar status para Ativo
@@ -435,6 +407,99 @@ class ProntuarioController {
       });
     } catch (err) {
       console.error("❌ Erro ao excluir registro:", err);
+      next(err);
+    }
+  }
+
+  static async atualizarRegistro(req, res, next) {
+    try {
+      const { id } = req.params;
+      const usuarioLogadoId = req.usuario?.id;
+      const registro = await NovoProntuario.buscarPorId(id);
+      const body = req.body || {};
+
+      if (!registro) {
+        return res.status(404).json({ error: "Registro não encontrado" });
+      }
+
+      let atualizado = null;
+
+      if (ProntuarioController.ehTipo(registro.tipo, "Tratamento") && registro.tratamento_id) {
+        atualizado = await ProntuarioTratamentos.atualizarParcial(registro.tratamento_id, {
+          diagnostico: body.diagnosticos,
+          observacao_clinica: body.observacao,
+          prescricao: body.recomendacoes,
+          usuario_atualizacao: usuarioLogadoId,
+        });
+      } else if (ProntuarioController.ehTipo(registro.tipo, "Restrições") && registro.restricao_id) {
+        const payload = {
+          restricao: body.observacao,
+          recomendacoes: body.recomendacoes,
+          data_validade: body.data_validade,
+          usuario_atualizacao: usuarioLogadoId,
+        };
+
+        if (Object.prototype.hasOwnProperty.call(body, "status_conclusao")) {
+          payload.status_conclusao = body.status_conclusao;
+        }
+
+        atualizado = await ProntuarioRestricoes.atualizarParcial(registro.restricao_id, {
+          ...payload,
+        });
+      } else if (ProntuarioController.ehTipo(registro.tipo, "Dieta") && registro.dieta_id) {
+        const payload = {
+          descricao: body.observacao,
+          data_fim: body.data_validade,
+          usuario_atualizacao: usuarioLogadoId,
+        };
+
+        if (Object.prototype.hasOwnProperty.call(body, "status_conclusao")) {
+          payload.status_conclusao = body.status_conclusao;
+        }
+
+        atualizado = await ProntuarioDietas.atualizarParcial(registro.dieta_id, {
+          ...payload,
+        });
+      } else if (ProntuarioController.ehTipo(registro.tipo, "Suplementação") && registro.suplementacao_id) {
+        const payload = {
+          produto: body.produto,
+          dose: body.dose,
+          frequencia: body.frequencia,
+          descricao: body.observacao,
+          data_fim: body.data_validade,
+          usuario_atualizacao: usuarioLogadoId,
+        };
+
+        if (Object.prototype.hasOwnProperty.call(body, "status_conclusao")) {
+          payload.status_conclusao = body.status_conclusao;
+        }
+
+        atualizado = await ProntuarioSuplementacoes.atualizarParcial(registro.suplementacao_id, {
+          ...payload,
+        });
+      } else if (ProntuarioController.ehTipo(registro.tipo, "Movimentação") && registro.movimentacao_id) {
+        const payload = {
+          motivo: body.observacao,
+          destino: body.destino,
+          data_movimentacao: body.data_movimentacao,
+          usuario_atualizacao: usuarioLogadoId,
+        };
+
+        if (Object.prototype.hasOwnProperty.call(body, "status_conclusao")) {
+          payload.status_conclusao = body.status_conclusao;
+        }
+
+        atualizado = await ProntuarioMovimentacoes.atualizarParcial(registro.movimentacao_id, {
+          ...payload,
+        });
+      }
+
+      if (!atualizado) {
+        return res.status(400).json({ error: "Tipo de registro sem suporte para atualização no novo modelo" });
+      }
+
+      return res.status(200).json({ success: true, message: "Prontuário atualizado com sucesso" });
+    } catch (err) {
       next(err);
     }
   }
