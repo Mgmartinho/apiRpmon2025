@@ -1,4 +1,4 @@
-import pool from "../config/mysqlConnect.js";
+﻿import pool from "../config/mysqlConnect.js";
 
 class NovoProntuario {
   static async _resolverNomeTabela(db, plural, singular) {
@@ -16,19 +16,21 @@ class NovoProntuario {
   }
 
   static async _resolverTabelasRelacionadas(db = pool) {
-    const [dietas, suplementacoes, movimentacoes, vacinacoes] = await Promise.all([
+    const [dietas, suplementacoes, movimentacoes, vacinacoes, vermifugacoes] = await Promise.all([
       this._resolverNomeTabela(db, "prontuario_dietas", "prontuario_dieta"),
       this._resolverNomeTabela(db, "prontuario_suplementacoes", "prontuario_suplementacao"),
       this._resolverNomeTabela(db, "prontuario_movimentacoes", "prontuario_movimentacao"),
       this._resolverNomeTabela(db, "prontuario_vacinacoes", "prontuario_vacinacao"),
+      this._resolverNomeTabela(db, "prontuario_vermifugacoes", "prontuario_vermifugacao"),
     ]);
 
-    const [dietasCols, suplementacoesCols, movimentacoesCols, restricoesCols, vacinacoesCols] = await Promise.all([
+    const [dietasCols, suplementacoesCols, movimentacoesCols, restricoesCols, vacinacoesCols, vermifugacoesCols] = await Promise.all([
       this._obterColunasTabela(dietas, db),
       this._obterColunasTabela(suplementacoes, db),
       this._obterColunasTabela(movimentacoes, db),
       this._obterColunasTabela("prontuario_restricoes", db),
       this._obterColunasTabela(vacinacoes, db),
+      this._obterColunasTabela(vermifugacoes, db),
     ]);
 
     return {
@@ -36,11 +38,13 @@ class NovoProntuario {
       suplementacoes,
       movimentacoes,
       vacinacoes,
+      vermifugacoes,
       dietasCols,
       suplementacoesCols,
       movimentacoesCols,
       restricoesCols,
       vacinacoesCols,
+      vermifugacoesCols,
     };
   }
 
@@ -63,11 +67,13 @@ class NovoProntuario {
       suplementacoes,
       movimentacoes,
       vacinacoes,
+      vermifugacoes,
       dietasCols,
       suplementacoesCols,
       movimentacoesCols,
       restricoesCols,
       vacinacoesCols,
+      vermifugacoesCols,
     } = await this._resolverTabelasRelacionadas();
 
     const restricaoUsuarioAtualizacaoExpr = restricoesCols.has("usuario_atualizacao") ? "pr.usuario_atualizacao" : "NULL";
@@ -102,6 +108,11 @@ class NovoProntuario {
     const vacinacaoDataAtualizacaoExpr = vacinacoesCols.has("data_atualizacao") ? "pv.data_atualizacao" : "NULL";
     const vacinacaoUsuarioAtualizacaoNomeExpr = vacinacoesCols.has("usuario_atualizacao") ? "pvua.nome" : "NULL";
     const vacinacaoUsuarioAtualizacaoRegistroExpr = vacinacoesCols.has("usuario_atualizacao") ? "pvua.re" : "NULL";
+
+    const vermifugacaoUsuarioAtualizacaoExpr = vermifugacoesCols.has("usuario_atualizacao") ? "pver.usuario_atualizacao" : "NULL";
+    const vermifugacaoDataAtualizacaoExpr = vermifugacoesCols.has("data_atualizacao") ? "pver.data_atualizacao" : "NULL";
+    const vermifugacaoUsuarioAtualizacaoNomeExpr = vermifugacoesCols.has("usuario_atualizacao") ? "pverua.nome" : "NULL";
+    const vermifugacaoUsuarioAtualizacaoRegistroExpr = vermifugacoesCols.has("usuario_atualizacao") ? "pverua.re" : "NULL";
 
     const [rows] = await pool.query(
       `SELECT
@@ -220,13 +231,22 @@ class NovoProntuario {
         ${vacinacaoUsuarioAtualizacaoNomeExpr} AS vacinacao_usuario_atualizacao_nome,
         ${vacinacaoUsuarioAtualizacaoRegistroExpr} AS vacinacao_usuario_atualizacao_registro,
 
+        -- Vermifugações
+        pver.id                      AS vermifugacao_id,
+        pver.status_conclusao        AS vermifugacao_status,
+        ${vermifugacaoUsuarioAtualizacaoExpr} AS vermifugacao_usuario_atualizacao,
+        ${vermifugacaoDataAtualizacaoExpr} AS vermifugacao_data_atualizacao,
+        ${vermifugacaoUsuarioAtualizacaoNomeExpr} AS vermifugacao_usuario_atualizacao_nome,
+        ${vermifugacaoUsuarioAtualizacaoRegistroExpr} AS vermifugacao_usuario_atualizacao_registro,
+
         COALESCE(
           pt.status_conclusao,
           pr.status_conclusao,
           pd.status_conclusao,
           ps.status_conclusao,
           pm.status_conclusao,
-          pv.status_conclusao
+          pv.status_conclusao,
+          pver.status_conclusao
         ) AS status_conclusao
 
       FROM prontuario_geral pg
@@ -249,6 +269,9 @@ class NovoProntuario {
       LEFT JOIN \`${vacinacoes}\` pv ON pv.prontuario_id = pg.id
       LEFT JOIN usuarios pvu            ON pv.usuario_id = pvu.id
       ${vacinacoesCols.has("usuario_atualizacao") ? "LEFT JOIN usuarios pvua           ON pv.usuario_atualizacao = pvua.id" : ""}
+      LEFT JOIN \`${vermifugacoes}\` pver ON pver.prontuario_id = pg.id
+      LEFT JOIN usuarios pveru           ON pver.usuario_id = pveru.id
+      ${vermifugacoesCols.has("usuario_atualizacao") ? "LEFT JOIN usuarios pverua          ON pver.usuario_atualizacao = pverua.id" : ""}
       ORDER BY pg.data_criacao DESC`
     );
 
@@ -271,11 +294,13 @@ class NovoProntuario {
       suplementacoes,
       movimentacoes,
       vacinacoes,
+      vermifugacoes,
       dietasCols,
       suplementacoesCols,
       movimentacoesCols,
       restricoesCols,
       vacinacoesCols,
+      vermifugacoesCols,
     } = await this._resolverTabelasRelacionadas();
 
     const restricaoUsuarioAtualizacaoExpr = restricoesCols.has("usuario_atualizacao") ? "pr.usuario_atualizacao" : "NULL";
@@ -310,6 +335,11 @@ class NovoProntuario {
     const vacinacaoDataAtualizacaoExpr = vacinacoesCols.has("data_atualizacao") ? "pv.data_atualizacao" : "NULL";
     const vacinacaoUsuarioAtualizacaoNomeExpr = vacinacoesCols.has("usuario_atualizacao") ? "pvua.nome" : "NULL";
     const vacinacaoUsuarioAtualizacaoRegistroExpr = vacinacoesCols.has("usuario_atualizacao") ? "pvua.re" : "NULL";
+
+    const vermifugacaoUsuarioAtualizacaoExpr = vermifugacoesCols.has("usuario_atualizacao") ? "pver.usuario_atualizacao" : "NULL";
+    const vermifugacaoDataAtualizacaoExpr = vermifugacoesCols.has("data_atualizacao") ? "pver.data_atualizacao" : "NULL";
+    const vermifugacaoUsuarioAtualizacaoNomeExpr = vermifugacoesCols.has("usuario_atualizacao") ? "pverua.nome" : "NULL";
+    const vermifugacaoUsuarioAtualizacaoRegistroExpr = vermifugacoesCols.has("usuario_atualizacao") ? "pverua.re" : "NULL";
 
     const [rows] = await pool.query(
       `SELECT
@@ -428,13 +458,22 @@ class NovoProntuario {
         ${vacinacaoUsuarioAtualizacaoNomeExpr} AS vacinacao_usuario_atualizacao_nome,
         ${vacinacaoUsuarioAtualizacaoRegistroExpr} AS vacinacao_usuario_atualizacao_registro,
 
+        -- Vermifugações
+        pver.id                      AS vermifugacao_id,
+        pver.status_conclusao        AS vermifugacao_status,
+        ${vermifugacaoUsuarioAtualizacaoExpr} AS vermifugacao_usuario_atualizacao,
+        ${vermifugacaoDataAtualizacaoExpr} AS vermifugacao_data_atualizacao,
+        ${vermifugacaoUsuarioAtualizacaoNomeExpr} AS vermifugacao_usuario_atualizacao_nome,
+        ${vermifugacaoUsuarioAtualizacaoRegistroExpr} AS vermifugacao_usuario_atualizacao_registro,
+
         COALESCE(
           pt.status_conclusao,
           pr.status_conclusao,
           pd.status_conclusao,
           ps.status_conclusao,
           pm.status_conclusao,
-          pv.status_conclusao
+          pv.status_conclusao,
+          pver.status_conclusao
         ) AS status_conclusao
 
       FROM prontuario_geral pg
@@ -457,6 +496,9 @@ class NovoProntuario {
       LEFT JOIN \`${vacinacoes}\` pv ON pv.prontuario_id = pg.id
       LEFT JOIN usuarios pvu            ON pv.usuario_id = pvu.id
       ${vacinacoesCols.has("usuario_atualizacao") ? "LEFT JOIN usuarios pvua           ON pv.usuario_atualizacao = pvua.id" : ""}
+      LEFT JOIN \`${vermifugacoes}\` pver ON pver.prontuario_id = pg.id
+      LEFT JOIN usuarios pveru           ON pver.usuario_id = pveru.id
+      ${vermifugacoesCols.has("usuario_atualizacao") ? "LEFT JOIN usuarios pverua          ON pver.usuario_atualizacao = pverua.id" : ""}
       WHERE pg.numero_solipede = ?
       ORDER BY pg.data_criacao DESC`,
       [numero]
@@ -468,7 +510,7 @@ class NovoProntuario {
   }
 
   static async buscarPorId(id) {
-    const { dietas, suplementacoes, movimentacoes, vacinacoes } = await this._resolverTabelasRelacionadas();
+    const { dietas, suplementacoes, movimentacoes, vacinacoes, vermifugacoes } = await this._resolverTabelasRelacionadas();
 
     const [rows] = await pool.query(
       `SELECT
@@ -490,13 +532,16 @@ class NovoProntuario {
         pm.status_conclusao AS movimentacao_status,
         pv.id AS vacinacao_id,
         pv.status_conclusao AS vacinacao_status,
+        pver.id AS vermifugacao_id,
+        pver.status_conclusao AS vermifugacao_status,
         COALESCE(
           pt.status_conclusao,
           pr.status_conclusao,
           pd.status_conclusao,
           ps.status_conclusao,
           pm.status_conclusao,
-          pv.status_conclusao
+          pv.status_conclusao,
+          pver.status_conclusao
         ) AS status_conclusao
       FROM prontuario_geral pg
       LEFT JOIN prontuario_tratamentos pt ON pt.prontuario_id = pg.id
@@ -505,6 +550,7 @@ class NovoProntuario {
       LEFT JOIN \`${suplementacoes}\` ps ON ps.prontuario_id = pg.id
       LEFT JOIN \`${movimentacoes}\` pm ON pm.prontuario_id = pg.id
       LEFT JOIN \`${vacinacoes}\` pv ON pv.prontuario_id = pg.id
+      LEFT JOIN \`${vermifugacoes}\` pver ON pver.prontuario_id = pg.id
       WHERE pg.id = ?`,
       [id]
     );
@@ -524,3 +570,4 @@ class NovoProntuario {
 }
 
 export default NovoProntuario;
+

@@ -5,6 +5,7 @@ import * as ProntuarioRestricaoController from "../controllers/ProntuarioRestric
 import * as ProntuarioSuplementacaoController from "../controllers/ProntuarioSuplementacaoControllers.js";
 import * as ProntuarioTratamentoController from "../controllers/ProntuarioTratamentoControllers.js";
 import * as ProntuarioVacinacaoController from "../controllers/ProntuarioVacinacaoControllers.js";
+import * as ProntuarioVermifugacaoController from "../controllers/ProntuarioVermifugacaoControllers.js";
 
 const router = express.Router();
 
@@ -42,5 +43,11 @@ router.get("/:prontuarioId/vacinacoes", ProntuarioVacinacaoController.listar);
 router.post("/vacinacoes", ProntuarioVacinacaoController.criar);
 router.patch("/vacinacoes/:id", ProntuarioVacinacaoController.atualizarParcial);
 router.delete("/vacinacoes/:id", ProntuarioVacinacaoController.excluir);
+
+// Vermifugações
+router.get("/:prontuarioId/vermifugacoes", ProntuarioVermifugacaoController.listar);
+router.post("/vermifugacoes", ProntuarioVermifugacaoController.criar);
+router.patch("/vermifugacoes/:id", ProntuarioVermifugacaoController.atualizarParcial);
+router.delete("/vermifugacoes/:id", ProntuarioVermifugacaoController.excluir);
 
 export default router;

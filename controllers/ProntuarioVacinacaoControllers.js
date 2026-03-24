@@ -116,7 +116,7 @@ export const criar = async (req, res) => {
       data_validade: data_validade || null,
       descricao: descricao || null,
       data_fim: data_fim || null,
-      status_conclusao: 'em_andamento',
+      status_conclusao: 'concluido',
     };
     
     console.log("   - Dados para vacinação:", JSON.stringify(dados, null, 2));
