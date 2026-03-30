@@ -1,22 +1,22 @@
 import pool from "../config/mysqlConnect.js";
 
-class ProntuarioVermifugacao {
+class ProntuarioAieMormo {
   static escolherPrimeiraColunaExistente(colunasSet, candidatos) {
     return candidatos.find((c) => colunasSet.has(c)) || null;
   }
 
   static async obterNomeTabela(db = pool) {
-    const [plural] = await db.query(`SHOW TABLES LIKE 'prontuario_vermifugacoes'`);
+    const [plural] = await db.query(`SHOW TABLES LIKE 'prontuario_aiemormos'`);
     if (plural.length > 0) {
-      return "prontuario_vermifugacoes";
+      return "prontuario_aiemormos";
     }
 
-    const [singular] = await db.query(`SHOW TABLES LIKE 'prontuario_vermifugacao'`);
+    const [singular] = await db.query(`SHOW TABLES LIKE 'prontuario_aiemormo'`);
     if (singular.length > 0) {
-      return "prontuario_vermifugacao";
+      return "prontuario_aiemormo";
     }
 
-    throw new Error("Tabela de vermifugacao não encontrada (prontuario_vermifugacoes/prontuario_vermifugacao)");
+    throw new Error("Tabela de AIE Mormo não encontrada (prontuario_aiemormos/prontuario_aiemormo)");
   }
 
   static async obterColunasTabela(db = pool) {
@@ -47,21 +47,21 @@ class ProntuarioVermifugacao {
     ]) || "id";
 
     const joinUsuarioCriacao = colunaUsuarioCriacao
-      ? `LEFT JOIN usuarios uc ON pv.${colunaUsuarioCriacao} = uc.id`
+      ? `LEFT JOIN usuarios uc ON pam.${colunaUsuarioCriacao} = uc.id`
       : "LEFT JOIN usuarios uc ON p.usuarioId = uc.id";
     const joinUsuarioAplicacao = colunaUsuarioAplicacao
-      ? `LEFT JOIN usuarios ua ON pv.${colunaUsuarioAplicacao} = ua.id`
+      ? `LEFT JOIN usuarios ua ON pam.${colunaUsuarioAplicacao} = ua.id`
       : "";
     const selectUsuario = `${colunaUsuarioCriacao ? "uc.nome as usuario_nome, uc.re as usuario_registro" : "NULL as usuario_nome, NULL as usuario_registro"}, ${colunaUsuarioAplicacao ? "ua.nome as usuario_aplicacao_nome, ua.re as usuario_aplicacao_registro" : "NULL as usuario_aplicacao_nome, NULL as usuario_aplicacao_registro"}`;
 
     const [rows] = await pool.query(
-      `SELECT pv.*, p.numero_solipede, p.tipo, ${selectUsuario}
-       FROM ${tabela} pv
-       JOIN prontuario_geral p ON pv.prontuario_id = p.id
+      `SELECT pam.*, p.numero_solipede, p.tipo, ${selectUsuario}
+       FROM ${tabela} pam
+       JOIN prontuario_geral p ON pam.prontuario_id = p.id
        ${joinUsuarioCriacao}
        ${joinUsuarioAplicacao}
-       WHERE pv.prontuario_id = ?
-       ORDER BY pv.${colunaOrdenacao} DESC`,
+       WHERE pam.prontuario_id = ?
+       ORDER BY pam.${colunaOrdenacao} DESC`,
       [prontuarioId]
     );
 
@@ -82,20 +82,20 @@ class ProntuarioVermifugacao {
     ]);
 
     const joinUsuarioCriacao = colunaUsuarioCriacao
-      ? `LEFT JOIN usuarios uc ON pv.${colunaUsuarioCriacao} = uc.id`
+      ? `LEFT JOIN usuarios uc ON pam.${colunaUsuarioCriacao} = uc.id`
       : "LEFT JOIN usuarios uc ON p.usuarioId = uc.id";
     const joinUsuarioAplicacao = colunaUsuarioAplicacao
-      ? `LEFT JOIN usuarios ua ON pv.${colunaUsuarioAplicacao} = ua.id`
+      ? `LEFT JOIN usuarios ua ON pam.${colunaUsuarioAplicacao} = ua.id`
       : "";
     const selectUsuario = `${colunaUsuarioCriacao ? "uc.nome as usuario_nome, uc.re as usuario_registro" : "NULL as usuario_nome, NULL as usuario_registro"}, ${colunaUsuarioAplicacao ? "ua.nome as usuario_aplicacao_nome, ua.re as usuario_aplicacao_registro" : "NULL as usuario_aplicacao_nome, NULL as usuario_aplicacao_registro"}`;
 
     const [rows] = await pool.query(
-      `SELECT pv.*, p.numero_solipede, p.tipo, ${selectUsuario}
-       FROM ${tabela} pv
-       JOIN prontuario_geral p ON pv.prontuario_id = p.id
+      `SELECT pam.*, p.numero_solipede, p.tipo, ${selectUsuario}
+       FROM ${tabela} pam
+       JOIN prontuario_geral p ON pam.prontuario_id = p.id
        ${joinUsuarioCriacao}
        ${joinUsuarioAplicacao}
-       WHERE pv.id = ?`,
+       WHERE pam.id = ?`,
       [id]
     );
 
@@ -124,22 +124,15 @@ class ProntuarioVermifugacao {
       usuario_id,
       usuario_aplicacao,
       usuario_atualizacao,
-      produto,
-      partida,
-      fabricacao,
-      data_inicio,
-      data_fabricacao,
-      data_validade,
+      data_exame,
+      validade,
+      resultado,
       descricao,
       status_conclusao,
     } = dados;
 
     if (!prontuario_id || !usuario_id) {
       throw new Error("prontuario_id e usuario_id são obrigatórios");
-    }
-
-    if (!produto || !String(produto).trim()) {
-      throw new Error("Produto é obrigatório");
     }
 
     const prontuarioValido = await this.validarProntuario(prontuario_id, db);
@@ -149,29 +142,54 @@ class ProntuarioVermifugacao {
 
     const usuarioValido = await this.validarUsuario(usuario_id, db);
     if (!usuarioValido) {
-      throw new Error(`Usuário ${usuario_id} não encontrado ou inativo`);
+      throw new Error(`Usuário ${usuario_id} não encontrado`);
     }
 
     const usuarioAplicacao = usuario_aplicacao || usuario_id;
     if (usuarioAplicacao) {
       const usuarioAplicacaoValido = await this.validarUsuario(usuarioAplicacao, db);
       if (!usuarioAplicacaoValido) {
-        throw new Error(`Usuário responsável ${usuarioAplicacao} não encontrado ou inativo`);
+        throw new Error(`Usuário responsável ${usuarioAplicacao} não encontrado`);
       }
     }
 
     const { tabela, colunas } = await this.obterColunasTabela(db);
 
-    const temAlgumaColunaUsuario = ["usuario_aplicacao", "usuario_atualizacao", "usuario_id"].some(
-      (c) => colunas.has(c)
-    );
-
-    if (!temAlgumaColunaUsuario) {
-      throw new Error("Tabela de vermifugação sem coluna de usuário (usuario_id/usuario_atualizacao/usuario_aplicacao)");
+    if (!colunas.has("prontuario_id")) {
+      throw new Error("Tabela de AIE/Mormo sem coluna prontuario_id");
     }
 
-    const campos = ["prontuario_id", "produto"];
-    const valores = [prontuario_id, produto || null];
+    const temAlgumaColunaUsuario = ["usuario_aplicacao", "usuario_atualizacao", "usuario_id"].some((c) => colunas.has(c));
+
+    if (!temAlgumaColunaUsuario) {
+      throw new Error("Tabela de AIE/Mormo sem coluna de usuário (usuario_id/usuario_atualizacao/usuario_aplicacao)");
+    }
+
+    const colunaDataExame = this.escolherPrimeiraColunaExistente(colunas, [
+      "data_exame",
+      "data_inicio",
+      "data_movimentacao",
+    ]);
+    const colunaValidade = this.escolherPrimeiraColunaExistente(colunas, [
+      "validade",
+      "validade_dias",
+    ]);
+    const colunaResultado = this.escolherPrimeiraColunaExistente(colunas, [
+      "resultado",
+      "resultado_exame",
+    ]);
+    const colunaDescricao = this.escolherPrimeiraColunaExistente(colunas, [
+      "descricao",
+      "observacao",
+      "motivo",
+    ]);
+    const colunaStatus = this.escolherPrimeiraColunaExistente(colunas, [
+      "status_conclusao",
+      "status",
+    ]);
+
+    const campos = ["prontuario_id"];
+    const valores = [prontuario_id];
 
     if (colunas.has("usuario_id")) {
       campos.push("usuario_id");
@@ -188,51 +206,39 @@ class ProntuarioVermifugacao {
       valores.push(usuario_atualizacao || usuario_id);
     }
 
-    if (colunas.has("partida")) {
-      campos.push("partida");
-      valores.push(partida || null);
+    if (colunaDataExame) {
+      campos.push(colunaDataExame);
+      valores.push(data_exame || new Date().toISOString().split("T")[0]);
     }
 
-    if (colunas.has("fabricacao")) {
-      campos.push("fabricacao");
-      valores.push(fabricacao || null);
+    if (colunaValidade) {
+      campos.push(colunaValidade);
+      valores.push(validade || null);
     }
 
-    if (colunas.has("data_inicio")) {
-      campos.push("data_inicio");
-      valores.push(data_inicio || new Date().toISOString().split("T")[0]);
+    if (colunaResultado) {
+      campos.push(colunaResultado);
+      valores.push(resultado || null);
     }
 
-    if (colunas.has("data_fabricacao")) {
-      campos.push("data_fabricacao");
-      valores.push(data_fabricacao || null);
-    }
-
-    if (colunas.has("data_validade")) {
-      campos.push("data_validade");
-      valores.push(data_validade || null);
-    }
-
-    if (colunas.has("descricao")) {
-      campos.push("descricao");
+    if (colunaDescricao) {
+      campos.push(colunaDescricao);
       valores.push(descricao || null);
     }
 
-    if (colunas.has("status_conclusao")) {
-      campos.push("status_conclusao");
+    if (colunaStatus) {
+      campos.push(colunaStatus);
       valores.push(status_conclusao || "em_andamento");
     }
 
     const placeholders = campos.map(() => "?").join(", ");
 
-    const [result] = await db.query(
-      `INSERT INTO ${tabela}
-       (${campos.join(", ")})
-       VALUES (${placeholders})`,
+    const [resultadoInsert] = await db.query(
+      `INSERT INTO ${tabela} (${campos.join(", ")}) VALUES (${placeholders})`,
       valores
     );
 
-    return result.insertId;
+    return resultadoInsert.insertId;
   }
 
   static async atualizarParcial(id, dados, db = pool) {
@@ -242,66 +248,76 @@ class ProntuarioVermifugacao {
     }
 
     const { tabela, colunas } = await this.obterColunasTabela(db);
-    const { usuario_atualizacao, usuario_aplicacao, ...camposAtualizaveis } = dados;
-    const camposPermitidos = [
-      "produto",
-      "partida",
-      "fabricacao",
-      "data_inicio",
-      "data_fabricacao",
-      "data_validade",
-      "descricao",
-      "status_conclusao",
-    ];
+    const { usuario_atualizacao, ...camposAtualizaveis } = dados;
+
+    if (Object.keys(camposAtualizaveis).length === 0) {
+      return true;
+    }
+
+    const camposComAlias = {
+      data_exame: this.escolherPrimeiraColunaExistente(colunas, ["data_exame", "data_inicio", "data_movimentacao"]),
+      validade: this.escolherPrimeiraColunaExistente(colunas, ["validade", "validade_dias"]),
+      resultado: this.escolherPrimeiraColunaExistente(colunas, ["resultado", "resultado_exame"]),
+      descricao: this.escolherPrimeiraColunaExistente(colunas, ["descricao", "observacao", "motivo"]),
+      status_conclusao: this.escolherPrimeiraColunaExistente(colunas, ["status_conclusao", "status"]),
+    };
 
     const camposParaAtualizar = [];
     const valores = [];
 
-    for (const campo of camposPermitidos) {
-      if (Object.prototype.hasOwnProperty.call(camposAtualizaveis, campo) && colunas.has(campo)) {
-        camposParaAtualizar.push(`${campo} = ?`);
-        valores.push(camposAtualizaveis[campo] || null);
+    Object.entries(camposAtualizaveis).forEach(([campoEntrada, valor]) => {
+      const campoReal = camposComAlias[campoEntrada] || (colunas.has(campoEntrada) ? campoEntrada : null);
+      if (campoReal) {
+        camposParaAtualizar.push(`${campoReal} = ?`);
+        valores.push(valor || null);
       }
-    }
+    });
 
     const colunaUsuarioAtualizacao = this.escolherPrimeiraColunaExistente(colunas, [
       "usuario_atualizacao",
-      "usuario_aplicacao",
       "usuario_id",
+      "usuario_aplicacao",
     ]);
-    const usuarioResponsavel = usuario_aplicacao || usuario_atualizacao;
 
-    if (usuarioResponsavel && colunaUsuarioAtualizacao) {
+    if (usuario_atualizacao && colunaUsuarioAtualizacao) {
       camposParaAtualizar.push(`${colunaUsuarioAtualizacao} = ?`);
-      valores.push(usuarioResponsavel);
+      valores.push(usuario_atualizacao);
     }
 
     if (camposParaAtualizar.length === 0) {
-      return registroAtual;
+      return true;
     }
 
     valores.push(id);
 
-    const [result] = await db.query(
+    const [resultado] = await db.query(
       `UPDATE ${tabela}
        SET ${camposParaAtualizar.join(", ")}
        WHERE id = ?`,
       valores
     );
 
-    return result.affectedRows > 0;
+    return resultado.affectedRows > 0;
   }
 
-  static async excluir(id) {
+  static async excluir(id, db = pool) {
+    const tabela = await this.obterNomeTabela(db);
+
+    const [resultado] = await db.query(`DELETE FROM ${tabela} WHERE id = ?`, [id]);
+
+    return resultado.affectedRows > 0;
+  }
+
+  static async obterStatus(id) {
     const tabela = await this.obterNomeTabela();
 
-    const [result] = await pool.query(
-      `DELETE FROM ${tabela} WHERE id = ?`,
+    const [rows] = await pool.query(
+      `SELECT status_conclusao FROM ${tabela} WHERE id = ?`,
       [id]
     );
 
-    return result.affectedRows > 0;
+    return rows[0]?.status_conclusao || null;
   }
 }
 
-export default ProntuarioVermifugacao;
+export default ProntuarioAieMormo;

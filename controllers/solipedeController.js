@@ -9,6 +9,47 @@ import ProntuarioMovimentacoes from "../models/ProntuarioMovimentacao.js";
 
 class SolipedeController {
 
+  static formatarDataHoraMySql(data = new Date()) {
+    const pad = (n) => String(n).padStart(2, "0");
+    const ano = data.getFullYear();
+    const mes = pad(data.getMonth() + 1);
+    const dia = pad(data.getDate());
+    const hora = pad(data.getHours());
+    const minuto = pad(data.getMinutes());
+    const segundo = pad(data.getSeconds());
+    return `${ano}-${mes}-${dia} ${hora}:${minuto}:${segundo}`;
+  }
+
+  static normalizarDataMovimentacao(valor) {
+    const agora = new Date();
+
+    if (!valor || String(valor).trim() === "") {
+      return this.formatarDataHoraMySql(agora);
+    }
+
+    const entrada = String(valor).trim();
+
+    if (/^\d{4}-\d{2}-\d{2}$/.test(entrada)) {
+      const [ano, mes, dia] = entrada.split("-").map(Number);
+      const dataComHoraAtual = new Date(
+        ano,
+        mes - 1,
+        dia,
+        agora.getHours(),
+        agora.getMinutes(),
+        agora.getSeconds()
+      );
+      return this.formatarDataHoraMySql(dataComHoraAtual);
+    }
+
+    const dataParseada = new Date(entrada);
+    if (Number.isNaN(dataParseada.getTime())) {
+      return this.formatarDataHoraMySql(agora);
+    }
+
+    return this.formatarDataHoraMySql(dataParseada);
+  }
+
   // ===== CRUD =====
 static async listar(req, res, next) {
   try {
@@ -341,7 +382,9 @@ static async adicionarHoras(req, res) {
       } = req.body;
 
       const novaAlocacaoFinal = destino || novaAlocacao;
-      const dataFinal = data_movimentacao || dataMovimentacao;
+      const dataFinal = SolipedeController.normalizarDataMovimentacao(
+        data_movimentacao || dataMovimentacao
+      );
       const motivoFinal = motivo || observacao || null;
 
       const usuario = req.usuario;
@@ -709,7 +752,10 @@ static async adicionarHoras(req, res) {
         return res.status(404).json({ error: err.message });
       }
       
-      res.status(500).json({ error: "Erro ao excluir solípede" });
+      res.status(500).json({
+        error: "Erro ao excluir solípede",
+        detail: err.message,
+      });
     }
   }
 

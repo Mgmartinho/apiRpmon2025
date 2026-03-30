@@ -6,6 +6,8 @@ import * as ProntuarioSuplementacaoController from "../controllers/ProntuarioSup
 import * as ProntuarioTratamentoController from "../controllers/ProntuarioTratamentoControllers.js";
 import * as ProntuarioVacinacaoController from "../controllers/ProntuarioVacinacaoControllers.js";
 import * as ProntuarioVermifugacaoController from "../controllers/ProntuarioVermifugacaoControllers.js";
+import * as ProntuarioAieMormoController from "../controllers/ProntuarioAieMormoControllers.js";
+import * as ProntuarioCirurgiaController from "../controllers/ProntuarioCirurgiaControllers.js";
 
 const router = express.Router();
 
@@ -49,5 +51,18 @@ router.get("/:prontuarioId/vermifugacoes", ProntuarioVermifugacaoController.list
 router.post("/vermifugacoes", ProntuarioVermifugacaoController.criar);
 router.patch("/vermifugacoes/:id", ProntuarioVermifugacaoController.atualizarParcial);
 router.delete("/vermifugacoes/:id", ProntuarioVermifugacaoController.excluir);
+
+// AIE & Mormo
+router.get("/:prontuarioId/aiemormo", ProntuarioAieMormoController.listar);
+router.post("/aiemormo", ProntuarioAieMormoController.criar);
+router.patch("/aiemormo/:id", ProntuarioAieMormoController.atualizarParcial);
+router.post("/aiemormo/:id/concluir", ProntuarioAieMormoController.concluir);
+router.delete("/aiemormo/:id", ProntuarioAieMormoController.excluir);
+
+// Cirurgias
+router.get("/:prontuarioId/cirurgias", ProntuarioCirurgiaController.listar);
+router.post("/cirurgias", ProntuarioCirurgiaController.criar);
+router.patch("/cirurgias/:id", ProntuarioCirurgiaController.atualizarParcial);
+router.delete("/cirurgias/:id", ProntuarioCirurgiaController.excluir);
 
 export default router;

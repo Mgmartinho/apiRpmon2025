@@ -585,6 +585,27 @@ class Solipede {
   ====================================================== */
   static async excluirSolipede(numero, motivoExclusao, observacao, usuarioId, senha) {
     const connection = await pool.getConnection();
+    const tableExists = async (tableName) => {
+      const [rows] = await connection.query("SHOW TABLES LIKE ?", [tableName]);
+      return rows.length > 0;
+    };
+    const getTableColumns = async (tableName) => {
+      if (!tableName) return new Set();
+      const [rows] = await connection.query(`SHOW COLUMNS FROM ${tableName}`);
+      return new Set(rows.map((row) => row.Field));
+    };
+    const pickQualifiedField = (alias, columns, candidates) => {
+      for (const field of candidates) {
+        if (columns.has(field)) return `${alias}.${field}`;
+      }
+      return null;
+    };
+    const pickExistingTable = async (...tableNames) => {
+      for (const tableName of tableNames) {
+        if (await tableExists(tableName)) return tableName;
+      }
+      return null;
+    };
     
     try {
       await connection.beginTransaction();
@@ -628,6 +649,27 @@ class Solipede {
       }
       console.log(`✅ Senha validada para usuário ${usuarioId}`);
 
+      const tabelaDietas = await pickExistingTable("prontuario_dietas", "prontuario_dieta");
+      const tabelaSuplementacoes = await pickExistingTable("prontuario_suplementacoes", "prontuario_suplementacao");
+      const tabelaMovimentacoes = await pickExistingTable("prontuario_movimentacoes", "prontuario_movimentacao");
+
+      const hasProntuarioGeral = await tableExists("prontuario_geral");
+      const hasProntuarioTratamentos = await tableExists("prontuario_tratamentos");
+      const hasProntuarioRestricoes = await tableExists("prontuario_restricoes");
+      const hasSolipedesExcluidos = await tableExists("solipedes_excluidos");
+      const hasProntuarioExcluido = await tableExists("prontuario_excluido");
+
+      const hasFerrageamentos = await tableExists("ferrageamentos");
+      const hasFerrageamentosExcluidos = await tableExists("ferrageamentos_excluidos");
+      const hasHistoricoHoras = await tableExists("historicohoras");
+      const hasHistoricoHorasExcluidos = await tableExists("historicohoras_excluidos");
+      const hasHistoricoMov = await tableExists("historico_movimentacao");
+      const hasHistoricoMovExcluidos = await tableExists("historico_movimentacao_excluidos");
+
+      if (!hasSolipedesExcluidos) {
+        throw new Error("Tabela solipedes_excluidos não encontrada");
+      }
+
       // 3. Copiar solípede para tabela de excluídos
       const insertSolipedeSql = `
         INSERT INTO solipedes_excluidos (
@@ -657,52 +699,125 @@ class Solipede {
       const solipedeExcluidoId = resultSolipede.insertId;
       console.log(`✅ Solípede copiado para solipedes_excluidos (ID: ${solipedeExcluidoId})`);
 
-      const [dietasTables] = await connection.query(`SHOW TABLES LIKE 'prontuario_dietas'`);
-      const [suplementacoesTables] = await connection.query(`SHOW TABLES LIKE 'prontuario_suplementacoes'`);
-      const [movimentacoesTables] = await connection.query(`SHOW TABLES LIKE 'prontuario_movimentacoes'`);
-
-      const tabelaDietas = dietasTables.length > 0 ? "prontuario_dietas" : "prontuario_dieta";
-      const tabelaSuplementacoes = suplementacoesTables.length > 0 ? "prontuario_suplementacoes" : "prontuario_suplementacao";
-      const tabelaMovimentacoes = movimentacoesTables.length > 0 ? "prontuario_movimentacoes" : "prontuario_movimentacao";
-
       // 4. Copiar todos os prontuários do novo modelo para prontuario_excluido
-      const [prontuarios] = await connection.query(
-        `SELECT
-          pg.numero_solipede,
-          pg.tipo,
-          COALESCE(pt.observacao_clinica, pr.restricao, pd.descricao, ps.descricao, pm.motivo) AS observacao,
-          COALESCE(pt.prescricao, pr.recomendacoes) AS recomendacoes,
-          pg.data_criacao,
-          pg.data_atualizacao,
-          pg.usuarioId,
-          NULL AS status_baixa,
-          NULL AS data_liberacao,
-          NULL AS usuario_liberacao_id,
-          NULL AS tipo_baixa,
-          pm.data_movimentacao AS data_lancamento,
-          COALESCE(pr.data_validade, pd.data_fim, ps.data_fim) AS data_validade,
-          COALESCE(pt.status_conclusao, pr.status_conclusao, pd.status_conclusao, ps.status_conclusao, pm.status_conclusao) AS status_conclusao,
-          pt.data_conclusao,
-          pt.usuario_conclusao_id,
-          NULL AS status_anterior,
-          NULL AS status_novo,
-          NULL AS usuario_atualizacao_id,
-          pt.foi_responsavel_pela_baixa,
-          pt.precisa_baixar,
-          NULL AS alocacao_anterior,
-          pm.destino AS alocacao_nova,
-          NULL AS origem,
-          pm.destino AS destino,
-          pg.id AS prontuario_geral_id
-        FROM prontuario_geral pg
-        LEFT JOIN prontuario_tratamentos pt ON pt.prontuario_id = pg.id
-        LEFT JOIN prontuario_restricoes pr ON pr.prontuario_id = pg.id
-        LEFT JOIN ${tabelaDietas} pd ON pd.prontuario_id = pg.id
-        LEFT JOIN ${tabelaSuplementacoes} ps ON ps.prontuario_id = pg.id
-        LEFT JOIN ${tabelaMovimentacoes} pm ON pm.prontuario_id = pg.id
-        WHERE pg.numero_solipede = ?`,
-        [numero]
-      );
+      let prontuarios = [];
+      if (hasProntuarioGeral) {
+        if (!hasProntuarioExcluido) {
+          throw new Error("Tabela prontuario_excluido não encontrada");
+        }
+
+        const colunasTratamentos = hasProntuarioTratamentos
+          ? await getTableColumns("prontuario_tratamentos")
+          : new Set();
+        const colunasRestricoes = hasProntuarioRestricoes
+          ? await getTableColumns("prontuario_restricoes")
+          : new Set();
+        const colunasDietas = tabelaDietas
+          ? await getTableColumns(tabelaDietas)
+          : new Set();
+        const colunasSuplementacoes = tabelaSuplementacoes
+          ? await getTableColumns(tabelaSuplementacoes)
+          : new Set();
+        const colunasMovimentacoes = tabelaMovimentacoes
+          ? await getTableColumns(tabelaMovimentacoes)
+          : new Set();
+
+        const campoObsTratamento = pickQualifiedField("pt", colunasTratamentos, ["observacao_clinica", "observacao", "descricao"]);
+        const campoObsRestricao = pickQualifiedField("pr", colunasRestricoes, ["restricao", "observacao", "descricao"]);
+        const campoObsDieta = pickQualifiedField("pd", colunasDietas, ["descricao", "observacao", "observacoes", "recomendacoes"]);
+        const campoObsSuplementacao = pickQualifiedField("ps", colunasSuplementacoes, ["descricao", "observacao", "observacoes", "recomendacoes", "produto"]);
+        const campoObsMovimentacao = pickQualifiedField("pm", colunasMovimentacoes, ["motivo", "observacao", "observacoes", "descricao"]);
+
+        const campoRecTratamento = pickQualifiedField("pt", colunasTratamentos, ["prescricao", "recomendacoes", "descricao"]);
+        const campoRecRestricao = pickQualifiedField("pr", colunasRestricoes, ["recomendacoes", "observacao", "descricao"]);
+
+        const campoDataValRestricao = pickQualifiedField("pr", colunasRestricoes, ["data_validade", "validade"]);
+        const campoDataValDieta = pickQualifiedField("pd", colunasDietas, ["data_fim", "data_validade", "validade"]);
+        const campoDataValSuplementacao = pickQualifiedField("ps", colunasSuplementacoes, ["data_fim", "data_validade", "validade"]);
+
+        const campoStatusTratamento = pickQualifiedField("pt", colunasTratamentos, ["status_conclusao", "status"]);
+        const campoStatusRestricao = pickQualifiedField("pr", colunasRestricoes, ["status_conclusao", "status"]);
+        const campoStatusDieta = pickQualifiedField("pd", colunasDietas, ["status_conclusao", "status"]);
+        const campoStatusSuplementacao = pickQualifiedField("ps", colunasSuplementacoes, ["status_conclusao", "status"]);
+        const campoStatusMovimentacao = pickQualifiedField("pm", colunasMovimentacoes, ["status_conclusao", "status"]);
+
+        const campoDataMov = pickQualifiedField("pm", colunasMovimentacoes, ["data_movimentacao", "data_lancamento", "created_at"]);
+        const campoDestinoMov = pickQualifiedField("pm", colunasMovimentacoes, ["destino", "destino_final", "destinoFinal", "alocacao_final"]);
+        const campoDataConclusaoTratamento = pickQualifiedField("pt", colunasTratamentos, ["data_conclusao"]);
+        const campoUsuarioConclusaoTratamento = pickQualifiedField("pt", colunasTratamentos, ["usuario_conclusao_id"]);
+        const campoFoiResponsavelBaixa = pickQualifiedField("pt", colunasTratamentos, ["foi_responsavel_pela_baixa"]);
+        const campoPrecisaBaixar = pickQualifiedField("pt", colunasTratamentos, ["precisa_baixar"]);
+
+        const selectObservacoes = [
+          campoObsTratamento,
+          campoObsRestricao,
+          campoObsDieta,
+          campoObsSuplementacao,
+          campoObsMovimentacao,
+        ].filter(Boolean);
+
+        const selectRecomendacoes = [
+          campoRecTratamento,
+          campoRecRestricao,
+        ].filter(Boolean);
+
+        const selectDataValidade = [
+          campoDataValRestricao,
+          campoDataValDieta,
+          campoDataValSuplementacao,
+        ].filter(Boolean);
+
+        const selectStatusConclusao = [
+          campoStatusTratamento,
+          campoStatusRestricao,
+          campoStatusDieta,
+          campoStatusSuplementacao,
+          campoStatusMovimentacao,
+        ].filter(Boolean);
+
+        const coalesceOrNull = (fields) =>
+          fields.length > 0 ? `COALESCE(${fields.join(", ")})` : "NULL";
+
+        const [rows] = await connection.query(
+          `SELECT
+            pg.numero_solipede,
+            pg.tipo,
+            ${coalesceOrNull(selectObservacoes)} AS observacao,
+            ${coalesceOrNull(selectRecomendacoes)} AS recomendacoes,
+            pg.data_criacao,
+            pg.data_atualizacao,
+            pg.usuarioId,
+            NULL AS status_baixa,
+            NULL AS data_liberacao,
+            NULL AS usuario_liberacao_id,
+            NULL AS tipo_baixa,
+            ${campoDataMov || "NULL"} AS data_lancamento,
+            ${coalesceOrNull(selectDataValidade)} AS data_validade,
+            ${coalesceOrNull(selectStatusConclusao)} AS status_conclusao,
+            ${campoDataConclusaoTratamento || "NULL"} AS data_conclusao,
+            ${campoUsuarioConclusaoTratamento || "NULL"} AS usuario_conclusao_id,
+            NULL AS status_anterior,
+            NULL AS status_novo,
+            NULL AS usuario_atualizacao_id,
+            ${campoFoiResponsavelBaixa || "NULL"} AS foi_responsavel_pela_baixa,
+            ${campoPrecisaBaixar || "NULL"} AS precisa_baixar,
+            NULL AS alocacao_anterior,
+            ${campoDestinoMov || "NULL"} AS alocacao_nova,
+            NULL AS origem,
+            ${campoDestinoMov || "NULL"} AS destino,
+            pg.id AS prontuario_geral_id
+          FROM prontuario_geral pg
+          ${hasProntuarioTratamentos ? "LEFT JOIN prontuario_tratamentos pt ON pt.prontuario_id = pg.id" : ""}
+          ${hasProntuarioRestricoes ? "LEFT JOIN prontuario_restricoes pr ON pr.prontuario_id = pg.id" : ""}
+          ${tabelaDietas ? `LEFT JOIN ${tabelaDietas} pd ON pd.prontuario_id = pg.id` : ""}
+          ${tabelaSuplementacoes ? `LEFT JOIN ${tabelaSuplementacoes} ps ON ps.prontuario_id = pg.id` : ""}
+          ${tabelaMovimentacoes ? `LEFT JOIN ${tabelaMovimentacoes} pm ON pm.prontuario_id = pg.id` : ""}
+          WHERE pg.numero_solipede = ?`,
+          [numero]
+        );
+
+        prontuarios = rows;
+      }
 
       if (prontuarios.length > 0) {
         console.log(`📋 Copiando ${prontuarios.length} prontuários...`);
@@ -755,12 +870,11 @@ class Solipede {
       }
 
       // 5. Copiar ferrageamentos para ferrageamentos_excluidos
-      const [ferrageamentos] = await connection.query(
-        "SELECT * FROM ferrageamentos WHERE solipede_numero = ?",
-        [numero]
-      );
+      const [ferrageamentos] = hasFerrageamentos
+        ? await connection.query("SELECT * FROM ferrageamentos WHERE solipede_numero = ?", [numero])
+        : [[]];
 
-      if (ferrageamentos.length > 0) {
+      if (ferrageamentos.length > 0 && hasFerrageamentosExcluidos) {
         console.log(`🔧 Copiando ${ferrageamentos.length} ferrageamentos...`);
         
         for (const ferr of ferrageamentos) {
@@ -786,15 +900,16 @@ class Solipede {
           ]);
         }
         console.log(`✅ ${ferrageamentos.length} ferrageamentos copiados`);
+      } else if (ferrageamentos.length > 0) {
+        console.warn("⚠️ Tabela ferrageamentos_excluidos não encontrada; mantendo ferrageamentos na tabela original.");
       }
 
       // 6. Copiar histórico de horas para historicohoras_excluidos
-      const [historicoHoras] = await connection.query(
-        "SELECT * FROM historicohoras WHERE solipedeNumero = ?",
-        [numero]
-      );
+      const [historicoHoras] = hasHistoricoHoras
+        ? await connection.query("SELECT * FROM historicohoras WHERE solipedeNumero = ?", [numero])
+        : [[]];
 
-      if (historicoHoras.length > 0) {
+      if (historicoHoras.length > 0 && hasHistoricoHorasExcluidos) {
         console.log(`⏱️ Copiando ${historicoHoras.length} registros de histórico de horas...`);
         
         for (const hora of historicoHoras) {
@@ -817,15 +932,16 @@ class Solipede {
           ]);
         }
         console.log(`✅ ${historicoHoras.length} registros de horas copiados`);
+      } else if (historicoHoras.length > 0) {
+        console.warn("⚠️ Tabela historicohoras_excluidos não encontrada; mantendo histórico de horas na tabela original.");
       }
 
       // 7. Copiar histórico de movimentação para historico_movimentacao_excluidos
-      const [historicoMov] = await connection.query(
-        "SELECT * FROM historico_movimentacao WHERE numero = ?",
-        [numero]
-      );
+      const [historicoMov] = hasHistoricoMov
+        ? await connection.query("SELECT * FROM historico_movimentacao WHERE numero = ?", [numero])
+        : [[]];
 
-      if (historicoMov.length > 0) {
+      if (historicoMov.length > 0 && hasHistoricoMovExcluidos) {
         console.log(`🚚 Copiando ${historicoMov.length} movimentações...`);
         
         for (const mov of historicoMov) {
@@ -846,58 +962,70 @@ class Solipede {
           ]);
         }
         console.log(`✅ ${historicoMov.length} movimentações copiadas`);
+      } else if (historicoMov.length > 0) {
+        console.warn("⚠️ Tabela historico_movimentacao_excluidos não encontrada; mantendo histórico de movimentação na tabela original.");
       }
 
       // 8. Deletar prontuários do novo modelo
       if (prontuarios.length > 0) {
-        await connection.query(
-          `DELETE pt FROM prontuario_tratamentos pt
-           INNER JOIN prontuario_geral pg ON pg.id = pt.prontuario_id
-           WHERE pg.numero_solipede = ?`,
-          [numero]
-        );
-        await connection.query(
-          `DELETE pr FROM prontuario_restricoes pr
-           INNER JOIN prontuario_geral pg ON pg.id = pr.prontuario_id
-           WHERE pg.numero_solipede = ?`,
-          [numero]
-        );
-        await connection.query(
-          `DELETE pd FROM ${tabelaDietas} pd
-           INNER JOIN prontuario_geral pg ON pg.id = pd.prontuario_id
-           WHERE pg.numero_solipede = ?`,
-          [numero]
-        );
-        await connection.query(
-          `DELETE ps FROM ${tabelaSuplementacoes} ps
-           INNER JOIN prontuario_geral pg ON pg.id = ps.prontuario_id
-           WHERE pg.numero_solipede = ?`,
-          [numero]
-        );
-        await connection.query(
-          `DELETE pm FROM ${tabelaMovimentacoes} pm
-           INNER JOIN prontuario_geral pg ON pg.id = pm.prontuario_id
-           WHERE pg.numero_solipede = ?`,
-          [numero]
-        );
+        if (hasProntuarioTratamentos) {
+          await connection.query(
+            `DELETE pt FROM prontuario_tratamentos pt
+             INNER JOIN prontuario_geral pg ON pg.id = pt.prontuario_id
+             WHERE pg.numero_solipede = ?`,
+            [numero]
+          );
+        }
+        if (hasProntuarioRestricoes) {
+          await connection.query(
+            `DELETE pr FROM prontuario_restricoes pr
+             INNER JOIN prontuario_geral pg ON pg.id = pr.prontuario_id
+             WHERE pg.numero_solipede = ?`,
+            [numero]
+          );
+        }
+        if (tabelaDietas) {
+          await connection.query(
+            `DELETE pd FROM ${tabelaDietas} pd
+             INNER JOIN prontuario_geral pg ON pg.id = pd.prontuario_id
+             WHERE pg.numero_solipede = ?`,
+            [numero]
+          );
+        }
+        if (tabelaSuplementacoes) {
+          await connection.query(
+            `DELETE ps FROM ${tabelaSuplementacoes} ps
+             INNER JOIN prontuario_geral pg ON pg.id = ps.prontuario_id
+             WHERE pg.numero_solipede = ?`,
+            [numero]
+          );
+        }
+        if (tabelaMovimentacoes) {
+          await connection.query(
+            `DELETE pm FROM ${tabelaMovimentacoes} pm
+             INNER JOIN prontuario_geral pg ON pg.id = pm.prontuario_id
+             WHERE pg.numero_solipede = ?`,
+            [numero]
+          );
+        }
         await connection.query("DELETE FROM prontuario_geral WHERE numero_solipede = ?", [numero]);
         console.log(`🗑️ ${prontuarios.length} prontuários deletados do novo modelo`);
       }
 
       // 9. Deletar ferrageamentos da tabela original
-      if (ferrageamentos.length > 0) {
+      if (ferrageamentos.length > 0 && hasFerrageamentosExcluidos) {
         await connection.query("DELETE FROM ferrageamentos WHERE solipede_numero = ?", [numero]);
         console.log(`🗑️ ${ferrageamentos.length} ferrageamentos deletados da tabela original`);
       }
 
       // 10. Deletar histórico de horas da tabela original
-      if (historicoHoras.length > 0) {
+      if (historicoHoras.length > 0 && hasHistoricoHorasExcluidos) {
         await connection.query("DELETE FROM historicohoras WHERE solipedeNumero = ?", [numero]);
         console.log(`🗑️ ${historicoHoras.length} registros de horas deletados da tabela original`);
       }
 
       // 11. Deletar histórico de movimentação da tabela original
-      if (historicoMov.length > 0) {
+      if (historicoMov.length > 0 && hasHistoricoMovExcluidos) {
         await connection.query("DELETE FROM historico_movimentacao WHERE numero = ?", [numero]);
         console.log(`🗑️ ${historicoMov.length} movimentações deletadas da tabela original`);
       }

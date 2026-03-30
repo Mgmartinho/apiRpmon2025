@@ -24,6 +24,20 @@ class Usuario {
     return rows;
   }
 
+  static async listarVeterinarios() {
+    const [rows] = await pool.query(
+      `SELECT id, nome, re as registro, email, perfil
+       FROM usuarios
+       WHERE ativo = TRUE
+         AND REPLACE(REPLACE(REPLACE(REPLACE(LOWER(TRIM(perfil)), 'á', 'a'), '_', ' '), '-', ' '), '  ', ' ') IN (
+           'veterinario',
+           'veterinario admin'
+         )
+       ORDER BY nome`
+    );
+    return rows;
+  }
+
   static async criar({ nome, re ,email, senha, perfil }) {
     return pool.query(
       `INSERT INTO usuarios (nome, re, email, senha, perfil)

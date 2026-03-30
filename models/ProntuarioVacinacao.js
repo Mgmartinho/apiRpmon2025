@@ -2,6 +2,10 @@ import pool from "../config/mysqlConnect.js";
 
 class ProntuarioVacinacao {
 
+  static escolherPrimeiraColunaExistente(colunasSet, candidatos) {
+    return candidatos.find((c) => colunasSet.has(c)) || null;
+  }
+
   static async obterNomeTabela(db = pool) {
     const [plural] = await db.query(`SHOW TABLES LIKE 'prontuario_vacinacoes'`);
     if (plural.length > 0) {
@@ -26,28 +30,61 @@ class ProntuarioVacinacao {
   }
 
   static async listarPorProntuario(prontuarioId) {
-    const tabela = await this.obterNomeTabela();
+    const { tabela, colunas } = await this.obterColunasTabela();
+    const colunaUsuario = this.escolherPrimeiraColunaExistente(colunas, [
+      "usuario_aplicacao",
+      "usuario_atualizacao",
+      "usuario_id",
+    ]);
+    const colunaOrdenacao = this.escolherPrimeiraColunaExistente(colunas, [
+      "data_criacao",
+      "data_atualizacao",
+      "id",
+    ]) || "id";
+
+    const joinUsuarioCriacao = "LEFT JOIN usuarios uc ON p.usuarioId = uc.id";
+    const joinUsuarioAplicacao = colunaUsuario
+      ? `LEFT JOIN usuarios ua ON pv.${colunaUsuario} = ua.id`
+      : "";
+    const selectUsuario = colunaUsuario
+      ? "uc.nome as usuario_nome, uc.re as usuario_registro, ua.nome as usuario_aplicacao_nome, ua.re as usuario_aplicacao_registro"
+      : "uc.nome as usuario_nome, uc.re as usuario_registro, NULL as usuario_aplicacao_nome, NULL as usuario_aplicacao_registro";
 
     const [rows] = await pool.query(
-      `SELECT pv.*, p.numero_solipede, u.nome as usuario_nome, u.re as usuario_registro
+      `SELECT pv.*, p.numero_solipede, ${selectUsuario}
        FROM ${tabela} pv
        JOIN prontuario_geral p ON pv.prontuario_id = p.id
-       LEFT JOIN usuarios u ON pv.usuario_id = u.id
+       ${joinUsuarioCriacao}
+       ${joinUsuarioAplicacao}
        WHERE pv.prontuario_id = ?
-       ORDER BY pv.data_criacao DESC`,
+       ORDER BY pv.${colunaOrdenacao} DESC`,
       [prontuarioId]
     );
     return rows;
   }
 
   static async buscarPorId(id) {
-    const tabela = await this.obterNomeTabela();
+    const { tabela, colunas } = await this.obterColunasTabela();
+    const colunaUsuario = this.escolherPrimeiraColunaExistente(colunas, [
+      "usuario_aplicacao",
+      "usuario_atualizacao",
+      "usuario_id",
+    ]);
+
+    const joinUsuarioCriacao = "LEFT JOIN usuarios uc ON p.usuarioId = uc.id";
+    const joinUsuarioAplicacao = colunaUsuario
+      ? `LEFT JOIN usuarios ua ON pv.${colunaUsuario} = ua.id`
+      : "";
+    const selectUsuario = colunaUsuario
+      ? "uc.nome as usuario_nome, uc.re as usuario_registro, ua.nome as usuario_aplicacao_nome, ua.re as usuario_aplicacao_registro"
+      : "uc.nome as usuario_nome, uc.re as usuario_registro, NULL as usuario_aplicacao_nome, NULL as usuario_aplicacao_registro";
 
     const [rows] = await pool.query(
-      `SELECT pv.*, p.numero_solipede, u.nome as usuario_nome, u.re as usuario_registro
+      `SELECT pv.*, p.numero_solipede, ${selectUsuario}
        FROM ${tabela} pv
        JOIN prontuario_geral p ON pv.prontuario_id = p.id
-       LEFT JOIN usuarios u ON pv.usuario_id = u.id
+       ${joinUsuarioCriacao}
+       ${joinUsuarioAplicacao}
        WHERE pv.id = ?`,
       [id]
     );
@@ -110,12 +147,21 @@ class ProntuarioVacinacao {
 
     const { tabela, colunas } = await this.obterColunasTabela(db);
 
-    const campos = ["prontuario_id", "usuario_id", "produto"];
-    const valores = [
-      prontuario_id,
-      usuario_id,
-      produto || null,
-    ];
+    const colunasUsuario = ["usuario_aplicacao", "usuario_atualizacao", "usuario_id"].filter(
+      (c) => colunas.has(c)
+    );
+
+    if (colunasUsuario.length === 0) {
+      throw new Error("Tabela de vacinação sem coluna de usuário (usuario_id/usuario_atualizacao/usuario_aplicacao)");
+    }
+
+    const campos = ["prontuario_id", "produto"];
+    const valores = [prontuario_id, produto || null];
+
+    colunasUsuario.forEach((coluna) => {
+      campos.push(coluna);
+      valores.push(usuario_id);
+    });
 
     // Campos opcionais com detecção dinâmica
     if (colunas.has("partida")) {
@@ -176,10 +222,10 @@ class ProntuarioVacinacao {
     return result.insertId;
   }
 
-  static async excluir(id) {
-    const tabela = await this.obterNomeTabela();
+  static async excluir(id, db = pool) {
+    const tabela = await this.obterNomeTabela(db);
 
-    const [result] = await pool.query(
+    const [result] = await db.query(
       `DELETE FROM ${tabela} WHERE id = ?`,
       [id]
     );
@@ -194,6 +240,7 @@ class ProntuarioVacinacao {
     }
 
     const { tabela, colunas } = await this.obterColunasTabela(db);
+    const { usuario_atualizacao, usuario_aplicacao, ...camposAtualizaveis } = dados;
     const camposPermitidos = [
       "produto",
       "partida",
@@ -205,17 +252,28 @@ class ProntuarioVacinacao {
       "descricao",
       "data_fim",
       "status_conclusao",
-      "usuario_atualizacao",
     ];
 
     const camposParaAtualizar = [];
     const valores = [];
 
     for (const campo of camposPermitidos) {
-      if (Object.prototype.hasOwnProperty.call(dados, campo) && colunas.has(campo)) {
+      if (Object.prototype.hasOwnProperty.call(camposAtualizaveis, campo) && colunas.has(campo)) {
         camposParaAtualizar.push(`${campo} = ?`);
-        valores.push(dados[campo] || null);
+        valores.push(camposAtualizaveis[campo] || null);
       }
+    }
+
+    const colunaUsuarioAtualizacao = this.escolherPrimeiraColunaExistente(colunas, [
+      "usuario_atualizacao",
+      "usuario_aplicacao",
+      "usuario_id",
+    ]);
+    const usuarioResponsavel = usuario_aplicacao || usuario_atualizacao;
+
+    if (usuarioResponsavel && colunaUsuarioAtualizacao) {
+      camposParaAtualizar.push(`${colunaUsuarioAtualizacao} = ?`);
+      valores.push(usuarioResponsavel);
     }
 
     if (camposParaAtualizar.length === 0) {

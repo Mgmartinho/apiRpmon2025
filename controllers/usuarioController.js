@@ -256,6 +256,16 @@ class UsuarioController {
       res.status(500).json({ error: "Erro ao alterar senha" });
     }
   }
+
+  static async listarVeterinarios(req, res) {
+    try {
+      const veterinarios = await Usuario.listarVeterinarios();
+      res.json(veterinarios);
+    } catch (err) {
+      console.error("Erro ao listar veterinários:", err);
+      res.status(500).json({ error: "Erro ao listar veterinários" });
+    }
+  }
 }
 
 export default UsuarioController;

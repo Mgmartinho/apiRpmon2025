@@ -2,6 +2,17 @@ import pool from "../config/mysqlConnect.js";
 
 class ProntuarioMovimentacoes {
 
+  static formatarDataHoraMySql(data = new Date()) {
+    const pad = (n) => String(n).padStart(2, "0");
+    const ano = data.getFullYear();
+    const mes = pad(data.getMonth() + 1);
+    const dia = pad(data.getDate());
+    const hora = pad(data.getHours());
+    const minuto = pad(data.getMinutes());
+    const segundo = pad(data.getSeconds());
+    return `${ano}-${mes}-${dia} ${hora}:${minuto}:${segundo}`;
+  }
+
   static async obterNomeTabela(db = pool) {
     const [plural] = await db.query(`SHOW TABLES LIKE 'prontuario_movimentacoes'`);
     if (plural.length > 0) {
@@ -141,7 +152,7 @@ class ProntuarioMovimentacoes {
 
     if (colunas.has("data_movimentacao")) {
       campos.push("data_movimentacao");
-      valores.push(data_movimentacao || new Date().toISOString().split("T")[0]);
+      valores.push(data_movimentacao || this.formatarDataHoraMySql());
     }
 
     if (colunas.has("status_conclusao")) {

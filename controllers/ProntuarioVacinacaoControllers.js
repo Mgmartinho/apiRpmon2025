@@ -1,5 +1,6 @@
 import ProntuarioVacinacao from "../models/ProntuarioVacinacao.js";
 import Solipede from "../models/Solipedes.js";
+import bcrypt from "bcryptjs";
 import pool from "../config/mysqlConnect.js";
 
 export const listar = async (req, res) => {
@@ -39,9 +40,13 @@ export const criar = async (req, res) => {
       data_inicio, 
       data_validade, 
       descricao,
-      data_fim 
+      data_fim,
+      usuario_atualizacao,
+      usuario_aplicacao,
     } = req.body;
     const usuario_id = req.usuario?.id; // Pega do token JWT
+    // Prioriza usuario_aplicacao; mantém compatibilidade com usuario_atualizacao.
+    const usuario_responsavel = usuario_aplicacao || usuario_atualizacao || usuario_id;
     
     console.log("👤 Usuário autenticado:", { 
       id: usuario_id, 
@@ -102,11 +107,11 @@ export const criar = async (req, res) => {
     // PASSO 3: Criar registro detalhado na tabela prontuario_vacinacao
     console.log("📝 Criando registro detalhado em prontuario_vacinacao...");
     console.log("   - prontuario_id:", prontuario_id);
-    console.log("   - usuario_id:", usuario_id);
+    console.log("   - usuario_id:", usuario_responsavel);
     
     const dados = {
       prontuario_id,
-      usuario_id,
+      usuario_id: usuario_responsavel,
       produto,
       partida: partida || null,
       fabricacao: fabricacao || null,
@@ -163,13 +168,65 @@ export const criar = async (req, res) => {
 };
 
 export const excluir = async (req, res) => {
+  let connection;
   try {
     const { id } = req.params;
-    const sucesso = await ProntuarioVacinacao.excluir(id);
-    if (!sucesso) return res.status(404).json({ erro: "Não encontrado" });
+    const { senha } = req.body || {};
+    const usuarioId = req.usuario?.id;
+
+    if (!usuarioId) {
+      return res.status(401).json({ erro: "Usuário não autenticado" });
+    }
+
+    if (!senha) {
+      return res.status(400).json({ erro: "Senha é obrigatória" });
+    }
+
+    const [usuarios] = await pool.query(
+      "SELECT id, senha FROM usuarios WHERE id = ?",
+      [usuarioId]
+    );
+
+    if (!usuarios || usuarios.length === 0) {
+      return res.status(401).json({ erro: "Usuário não encontrado" });
+    }
+
+    const senhaValida = await bcrypt.compare(senha, usuarios[0].senha);
+    if (!senhaValida) {
+      return res.status(401).json({ erro: "Senha inválida" });
+    }
+
+    connection = await pool.getConnection();
+    await connection.beginTransaction();
+
+    const registro = await ProntuarioVacinacao.buscarPorId(id);
+    if (!registro) {
+      await connection.rollback();
+      connection.release();
+      connection = null;
+      return res.status(404).json({ erro: "Não encontrado" });
+    }
+
+    const sucesso = await ProntuarioVacinacao.excluir(id, connection);
+    if (!sucesso) {
+      await connection.rollback();
+      connection.release();
+      connection = null;
+      return res.status(404).json({ erro: "Não encontrado" });
+    }
+
+    await connection.query(`DELETE FROM prontuario_geral WHERE id = ?`, [registro.prontuario_id]);
+
+    await connection.commit();
+    connection.release();
+    connection = null;
 
     res.json({ mensagem: "Vacinação removida" });
   } catch (error) {
+    if (connection) {
+      await connection.rollback();
+      connection.release();
+    }
     res.status(500).json({ erro: error.message });
   }
 };

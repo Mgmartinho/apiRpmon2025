@@ -10,6 +10,7 @@ router.post("/criar", UsuarioController.criar);
 
 // Rotas protegidas
 router.get("/usuarios", authMiddleware, UsuarioController.listarTodos);
+router.get("/usuarios/veterinarios/lista", authMiddleware, UsuarioController.listarVeterinarios);
 router.get("/usuarios/:id", authMiddleware, UsuarioController.buscarPorId);
 router.put("/usuarios/:id", authMiddleware, UsuarioController.atualizarDados);
 router.put("/usuarios/:id/perfil", authMiddleware, UsuarioController.atualizarPerfil);
