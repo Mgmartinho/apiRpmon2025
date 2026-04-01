@@ -8,6 +8,7 @@ import restricaoRoutes from "./restricaoRoutes.js";
 import observacaoRoutes from "./observacaoRoutes.js";
 import historicoRoutes from "./historicoRoutes.js";
 import SolipedeController from "../controllers/solipedeController.js";
+import ObservacaoComportamentalController from "../controllers/observacaoComportamentalController.js";
 
 const routes = (app) => {
   app.get("/", (req, res) => {
@@ -46,7 +47,7 @@ const routes = (app) => {
   app.get("/solipedes/prontuario/:numero", SolipedeController.listarProntuarioRestricoes);
   
   // ROTA PÚBLICA - Observações gerais (exceto restrições)
-  app.get("/solipedes/observacoes/:numero", SolipedeController.listarObservacoesGerais);
+  app.get("/solipedes/observacoes/:numero", ObservacaoComportamentalController.listarPorSolipede);
   
   // ROTA PÚBLICA - Ferrageamentos
   app.get("/solipedes/ferrageamentos", SolipedeController.listarFerrageamentosPublico);

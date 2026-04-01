@@ -51,16 +51,28 @@ class Solipede {
      CRUD
   ====================================================== */
   static async criar(data) {
+    const microchipNormalizado =
+      data.microchip !== undefined && data.microchip !== null && String(data.microchip).trim() !== ""
+        ? String(data.microchip).trim()
+        : null;
+
+    const paletaDireitaNormalizada =
+      data.paleta_direita !== undefined && data.paleta_direita !== null && String(data.paleta_direita).trim() !== ""
+        ? String(data.paleta_direita).trim()
+        : null;
+
     const sql = `
       INSERT INTO solipede
-      (numero, nome, DataNascimento, sexo, pelagem, movimentacao,
+      (numero, nome, microchip, paleta_direita, DataNascimento, sexo, pelagem, movimentacao,
        alocacao, restricoes, status, origem, esquadrao, baia, cargaHoraria)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     `;
 
     const values = [
       data.numero,
       data.nome,
+      microchipNormalizado,
+      paletaDireitaNormalizada,
       data.DataNascimento,
       data.sexo,
       data.pelagem,

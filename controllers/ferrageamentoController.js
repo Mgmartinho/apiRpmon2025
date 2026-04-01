@@ -1,5 +1,6 @@
 import Ferrageamento from "../models/Ferrageamento.js";
 import bcrypt from "bcryptjs";
+import { handleControllerError } from "../utils/apiError.js";
 
 class FerrageamentoController {
   // Criar novo ferrageamento
@@ -43,11 +44,7 @@ class FerrageamentoController {
         dados
       });
     } catch (error) {
-      console.error("Erro ao criar ferrageamento:", error);
-      res.status(500).json({
-        error: "Erro ao registrar ferrageamento",
-        details: error.message
-      });
+      return handleControllerError(res, error, 'registro de ferrageamento');
     }
   }
 
@@ -57,11 +54,7 @@ class FerrageamentoController {
       const ferrageamentos = await Ferrageamento.listarTodos();
       res.status(200).json(ferrageamentos);
     } catch (error) {
-      console.error("Erro ao listar ferrageamentos:", error);
-      res.status(500).json({
-        error: "Erro ao listar ferrageamentos",
-        details: error.message
-      });
+      return handleControllerError(res, error, 'listagem de ferrageamentos');
     }
   }
 
@@ -71,11 +64,7 @@ class FerrageamentoController {
       const ferrageamentos = await Ferrageamento.listarComStatus();
       res.status(200).json(ferrageamentos);
     } catch (error) {
-      console.error("Erro ao listar ferrageamentos com status:", error);
-      res.status(500).json({
-        error: "Erro ao listar ferrageamentos",
-        details: error.message
-      });
+      return handleControllerError(res, error, 'listagem de ferrageamentos com status');
     }
   }
 
@@ -93,11 +82,7 @@ class FerrageamentoController {
       const historico = await Ferrageamento.buscarHistoricoPorSolipede(numero);
       res.status(200).json(historico);
     } catch (error) {
-      console.error("Erro ao buscar histórico:", error);
-      res.status(500).json({
-        error: "Erro ao buscar histórico de ferrageamentos",
-        details: error.message
-      });
+      return handleControllerError(res, error, 'busca do histórico de ferrageamentos');
     }
   }
 
@@ -122,11 +107,7 @@ class FerrageamentoController {
 
       res.status(200).json(ultimo);
     } catch (error) {
-      console.error("Erro ao buscar último ferrageamento:", error);
-      res.status(500).json({
-        error: "Erro ao buscar último ferrageamento",
-        details: error.message
-      });
+      return handleControllerError(res, error, 'busca do último ferrageamento');
     }
   }
 
@@ -153,11 +134,7 @@ class FerrageamentoController {
         message: "Ferrageamento deletado com sucesso"
       });
     } catch (error) {
-      console.error("Erro ao deletar ferrageamento:", error);
-      res.status(500).json({
-        error: "Erro ao deletar ferrageamento",
-        details: error.message
-      });
+      return handleControllerError(res, error, 'exclusão de ferrageamento');
     }
   }
 
@@ -205,11 +182,7 @@ class FerrageamentoController {
         dados
       });
     } catch (error) {
-      console.error("Erro ao atualizar ferrageamento:", error);
-      res.status(500).json({
-        error: "Erro ao atualizar ferrageamento",
-        details: error.message
-      });
+      return handleControllerError(res, error, 'atualização de ferrageamento');
     }
   }
 
@@ -260,8 +233,7 @@ class FerrageamentoController {
 
       res.status(200).json({ message: "Ferrageamento deletado com sucesso" });
     } catch (error) {
-      console.error("Erro ao excluir ferrageamento com senha:", error);
-      res.status(500).json({ error: "Erro ao excluir ferrageamento", details: error.message });
+      return handleControllerError(res, error, 'exclusão de ferrageamento com senha');
     }
   }
 }

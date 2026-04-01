@@ -1,6 +1,7 @@
 import bcrypt from "bcryptjs";
 import jwt from "jsonwebtoken";
 import Usuario from "../models/Usuario.js";
+import { handleControllerError } from "../utils/apiError.js";
 
 class UsuarioController {
   static async login(req, res) {
@@ -40,8 +41,7 @@ class UsuarioController {
         },
       });
     } catch (err) {
-      console.error("Erro login:", err);
-      res.status(500).json({ error: "Erro interno" });
+      return handleControllerError(res, err, 'autenticação');
     }
   }
 
@@ -80,8 +80,7 @@ class UsuarioController {
         perfil: perfilUsuario
       });
     } catch (err) {
-      console.error("Erro ao criar usuário:", err);
-      res.status(500).json({ error: "Erro ao criar usuário" });
+      return handleControllerError(res, err, 'criação de usuário');
     }
   }
 
@@ -90,8 +89,7 @@ class UsuarioController {
       const usuarios = await Usuario.listarTodos();
       res.json(usuarios);
     } catch (err) {
-      console.error("Erro ao listar usuários:", err);
-      res.status(500).json({ error: "Erro ao listar usuários" });
+      return handleControllerError(res, err, 'listagem de usuários');
     }
   }
 
@@ -106,8 +104,7 @@ class UsuarioController {
 
       res.json(usuario);
     } catch (err) {
-      console.error("Erro ao buscar usuário:", err);
-      res.status(500).json({ error: "Erro ao buscar usuário" });
+      return handleControllerError(res, err, 'busca de usuário');
     }
   }
 
@@ -130,8 +127,7 @@ class UsuarioController {
         usuario: usuarioAtualizado,
       });
     } catch (err) {
-      console.error("Erro ao atualizar dados:", err);
-      res.status(500).json({ error: "Erro ao atualizar dados" });
+      return handleControllerError(res, err, 'atualização de dados do usuário');
     }
   }
 
@@ -182,8 +178,7 @@ class UsuarioController {
       console.log("✅ Perfil atualizado com sucesso!");
       res.json({ message: "Perfil atualizado com sucesso" });
     } catch (err) {
-      console.error("❌ Erro ao atualizar perfil:", err);
-      res.status(500).json({ error: "Erro ao atualizar perfil" });
+      return handleControllerError(res, err, 'atualização de perfil do usuário');
     }
   }
 
@@ -220,8 +215,7 @@ class UsuarioController {
 
       res.json({ message: "Senha alterada com sucesso" });
     } catch (err) {
-      console.error("Erro ao alterar senha:", err);
-      res.status(500).json({ error: "Erro ao alterar senha" });
+      return handleControllerError(res, err, 'alteração de senha');
     }
   }
 
@@ -252,8 +246,7 @@ class UsuarioController {
 
       res.json({ message: "Senha alterada com sucesso" });
     } catch (err) {
-      console.error("Erro ao alterar senha:", err);
-      res.status(500).json({ error: "Erro ao alterar senha" });
+      return handleControllerError(res, err, 'alteração de senha admin');
     }
   }
 
@@ -262,8 +255,7 @@ class UsuarioController {
       const veterinarios = await Usuario.listarVeterinarios();
       res.json(veterinarios);
     } catch (err) {
-      console.error("Erro ao listar veterinários:", err);
-      res.status(500).json({ error: "Erro ao listar veterinários" });
+      return handleControllerError(res, err, 'listagem de veterinários');
     }
   }
 }
