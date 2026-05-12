@@ -840,12 +840,20 @@ static async adicionarHoras(req, res) {
     }
   }
 
-  // ===== Horas do Mês Atual (otimizado) =====
+  // ===== Horas do Mês Selecionado (otimizado) =====
   static async horasMesAtual(req, res) {
     try {
       const hoje = new Date();
-      const mesAtual = hoje.getMonth() + 1;
-      const anoAtual = hoje.getFullYear();
+      const mesAtual = Number(req.query.mes) || hoje.getMonth() + 1;
+      const anoAtual = Number(req.query.ano) || hoje.getFullYear();
+
+      if (!Number.isInteger(mesAtual) || mesAtual < 1 || mesAtual > 12) {
+        return res.status(400).json({ error: "Mês inválido" });
+      }
+
+      if (!Number.isInteger(anoAtual) || anoAtual < 2000) {
+        return res.status(400).json({ error: "Ano inválido" });
+      }
 
       console.log(`📅 Buscando horas para: Mês ${mesAtual}, Ano ${anoAtual}`);
 
@@ -884,8 +892,8 @@ static async adicionarHoras(req, res) {
 
       res.status(200).json(resultado);
     } catch (err) {
-      console.error("Erro ao buscar horas do mês atual:", err);
-      res.status(500).json({ error: "Erro ao buscar horas do mês atual" });
+      console.error("Erro ao buscar horas do mês selecionado:", err);
+      res.status(500).json({ error: "Erro ao buscar horas do mês selecionado" });
     }
   }
 }

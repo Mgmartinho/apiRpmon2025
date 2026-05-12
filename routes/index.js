@@ -17,7 +17,9 @@ const routes = (app) => {
         <p>Esta API permite gerenciar solípedes, prontuários, ferrageamentos e muito mais.</p>
         <p>para fazer o acesso às rotas, utilize a rota 
         <a href="http://rpmon.intranet.policiamilitar.sp.gov.br/dashboard">RPMon Portal Veterinário</a>.</p>
-      `);
+        <p>Desenvolvido por: <strong>Equipe de Desenvolvimento RPMon 07/04/2026</strong></p>
+      
+        `);
   });
 
   // ROTA DE DEBUG - Testar token
